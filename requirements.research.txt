@@ -1,0 +1,4 @@
+freqtrade[plot]==2026.9
+alphalens-reloaded==0.4.6
+streamlit==1.66.0
+pytest==9.1.1

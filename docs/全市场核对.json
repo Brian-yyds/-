@@ -1,0 +1,57 @@
+{
+  "checked_at": 1792230413.818603,
+  "market_count": 522,
+  "price_ready": 516,
+  "OI_ready": 521,
+  "leader_checks": [
+    {
+      "symbol": "ICNTUSDT",
+      "snapshot_price": 0.2067,
+      "snapshot_time": 1792230410369,
+      "reference_time": 1792226760000,
+      "reference_price": 0.1991,
+      "reference_matches_binance": true,
+      "snapshot_1h_change_pct": 3.8171772978402796,
+      "snapshot_24h_change_pct": 49.242,
+      "fresh_binance_price": 0.2073,
+      "fresh_binance_24h_pct": 49.675
+    },
+    {
+      "symbol": "NILUSDT",
+      "snapshot_price": 0.08772,
+      "snapshot_time": 1792230410198,
+      "reference_time": 1792226760000,
+      "reference_price": 0.08575,
+      "reference_matches_binance": true,
+      "snapshot_1h_change_pct": 2.2973760932944565,
+      "snapshot_24h_change_pct": 5.509,
+      "fresh_binance_price": 0.08772,
+      "fresh_binance_24h_pct": 5.509
+    },
+    {
+      "symbol": "AVAAIUSDT",
+      "snapshot_price": 0.007628,
+      "snapshot_time": 1792230410358,
+      "reference_time": 1792226760000,
+      "reference_price": 0.008929,
+      "reference_matches_binance": true,
+      "snapshot_1h_change_pct": -14.570500615970428,
+      "snapshot_24h_change_pct": 2.334,
+      "fresh_binance_price": 0.007628,
+      "fresh_binance_24h_pct": 2.334
+    },
+    {
+      "symbol": "SIRENUSDT",
+      "snapshot_price": 0.03535,
+      "snapshot_time": 1792230409972,
+      "reference_time": 1792226760000,
+      "reference_price": 0.03852,
+      "reference_matches_binance": true,
+      "snapshot_1h_change_pct": -8.229491173416402,
+      "snapshot_24h_change_pct": 24.603,
+      "fresh_binance_price": 0.03534,
+      "fresh_binance_24h_pct": 24.568
+    }
+  ],
+  "note": "快照涨跌与稍后REST值存在时间差；独立验证历史参考价与币安原始1m开盘价完全一致。"
+}
