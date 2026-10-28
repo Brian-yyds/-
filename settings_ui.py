@@ -35,6 +35,7 @@ def rules():
         cap=b.number_input('成交榜首：市值上限 USD',min_value=1.,max_value=1e12,value=float(gc['leader_cap']),step=1000000.)
         poll=st.number_input('每轮扫描后的最短间隔（秒）',min_value=15,max_value=3600,value=int(gc['poll_seconds']),step=5)
         st.caption('“大于”不包含等于。毕业按北京时间当天；两类警报都要求 KOL 超过阈值。成交榜首的天数、市值过滤不改变警报规则。')
+        st.caption('GMGN警报排除币股/股票及ETF代币：按发行方合约目录、证券平台标记及发行方名称识别；不按代币简称或整条链屏蔽。热搜、成交榜首和币安采集仍按原范围。')
         st.caption('热搜按你在GMGN页面的排序：SOL / BSC / Base / ROB 四链热搜名单，5分钟成交额降序第一。不受成交榜首或警报筛选影响。')
         st.caption('警报持续命中只记录一次；连续观测5分钟不满足条件后才重新触发。右侧展示最近3条历史警报。')
         if st.form_submit_button('保存 GMGN 规则',type='primary'):

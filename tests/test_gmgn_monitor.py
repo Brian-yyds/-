@@ -11,7 +11,7 @@ ADDRESS = 'C5xph2yL6gMdxmuLGxJBkGpmuDFfyi5fqkBNhvL6pump'
 def token(**extra):
     raw = dict(address=ADDRESS,symbol='TEST',name='Test token',launchpad='pump',launchpad_platform='Pump.fun',
                launchpad_status='1',open_timestamp=NOW-3600,creation_timestamp=NOW-86400,
-               volume=300001,smart_degen_count=1,renowned_count=3,market_cap=1000000,holder_count=350)
+               volume=200001,smart_degen_count=1,renowned_count=3,market_cap=1000000,holder_count=350)
     raw.update(extra)
     return g.normalize(raw,'sol',NOW)
 
@@ -25,8 +25,8 @@ def isolated(tmp_path,monkeypatch):
 def test_counts_sum_and_strict_threshold():
     assert g.reason(token(),g.DEFAULTS,NOW)=='今日毕业放量'
     assert not g.reason(token(smart_degen_count=0,renowned_count=3),g.DEFAULTS,NOW)
-    assert not g.reason(token(volume=300000),g.DEFAULTS,NOW)
-    assert not g.reason(token(volume=250000),g.DEFAULTS,NOW)
+    assert not g.reason(token(volume=200000),g.DEFAULTS,NOW)
+    assert not g.reason(token(volume=199999),g.DEFAULTS,NOW)
     assert g.reason(token(smart_degen_count=0,renowned_count=4),g.DEFAULTS,NOW)
     assert not g.reason(token(smart_degen_count=4,renowned_count=2),g.DEFAULTS,NOW)
 
@@ -45,11 +45,11 @@ def test_ungraduated_never_uses_million_bypass(status):
 
 
 def test_direct_pool_million_rule_requires_kol_but_not_smart_or_date():
-    direct=token(launchpad='',launchpad_platform='pool_pancake',volume=1500001,open_timestamp=0,
+    direct=token(launchpad='',launchpad_platform='pool_pancake',volume=1000001,open_timestamp=0,
                  smart_degen_count=0,renowned_count=3)
     assert g.reason(direct,g.DEFAULTS,NOW)=='非发射台放量'
-    assert not g.reason(direct|{'volume':1500000},g.DEFAULTS,NOW)
-    assert not g.reason(direct|{'volume':1250000},g.DEFAULTS,NOW)
+    assert not g.reason(direct|{'volume':1000000},g.DEFAULTS,NOW)
+    assert not g.reason(direct|{'volume':999999},g.DEFAULTS,NOW)
     assert not g.reason(direct|{'renowned_count':2},g.DEFAULTS,NOW)
     assert not g.reason(direct|{'renowned_count':None},g.DEFAULTS,NOW)
     # Migrated launchpad token can retain a DEX label. Do not treat it as direct.
@@ -111,7 +111,7 @@ def test_missing_fields_cannot_rearm_an_episode(isolated):
 def test_runtime_threshold_changes(isolated):
     store.put('gmgn_config',dict(graduate_volume=300000,people=5))
     assert not g.reason(token(),g.configuration(),NOW)
-    assert g.configuration()['other_volume']==1500000
+    assert g.configuration()['other_volume']==1000000
 
 
 class FakeClient:

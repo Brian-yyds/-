@@ -411,14 +411,8 @@ def settings_page():
     render_settings()
 
 
-def strategy_lab_page():
-    from strategy_lab_ui import render_lab
-    render_lab()
-
-
 def render():
     st.set_page_config(page_title='全市场异动监控',page_icon='◉',layout='wide',initial_sidebar_state='collapsed')
     st.markdown(STYLE,unsafe_allow_html=True)
     st.navigation([st.Page(monitor_page,title='监控面板',default=True),
-                   st.Page(settings_page,title='设置与调试',url_path='settings'),
-                   st.Page(strategy_lab_page,title='策略实验室 · 测试',url_path='strategy-lab')],position='top').run()
+                   st.Page(settings_page,title='设置与调试',url_path='settings')],position='top').run()

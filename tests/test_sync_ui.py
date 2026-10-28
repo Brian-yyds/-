@@ -32,11 +32,12 @@ def test_settings_validation_host_verification_and_manual_capture(tmp_path,monke
     next(x for x in app.text_input if x.label=='从服务器控制台核实的 SHA256 指纹').set_value(candidate['fingerprint'])
     next(x for x in app.button if x.label=='核验并保存服务器身份').click().run()
     assert sync.configuration()['host_key_base64']=='dGVzdA=='
-    next(x for x in app.number_input if x.label=='发送间隔（秒）').set_value(120)
+    next(x for x in app.number_input if x.label=='发送间隔（秒）').set_value(60)
     next(x for x in app.checkbox if x.label=='启用定时上传').set_value(True)
     next(x for x in app.button if x.label=='保存同步设置').click().run()
     assert not app.exception
     assert sync.configuration()['enabled']
+    assert sync.configuration()['interval_seconds']==60
     next(x for x in app.button if x.label=='立即打包 / 加入发送队列').click().run()
     assert store.get('sync_capture_request')
     assert not calls  # UI only sends a local worker request.

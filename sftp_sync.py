@@ -11,7 +11,7 @@ import socket
 import store
 
 DEFAULTS = dict(enabled=False, host='', port=22, username='monitor', directory='/inbox',
-                interval_seconds=120, host_key_type='', host_key_base64='')
+                interval_seconds=60, host_key_type='', host_key_base64='')
 
 
 class SyncError(Exception):

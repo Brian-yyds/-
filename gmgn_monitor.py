@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import store
+import gmgn_equities as equities
 from gmgn_credentials import api_key
 
 CHAINS = ('sol', 'bsc', 'base', 'robinhood')
@@ -20,12 +21,12 @@ CHAIN_LABELS = {'sol':'SOL','bsc':'BSC','base':'BASE','robinhood':'ROB'}
 LEADER_MAX_DAYS = 50
 LEADER_MAX_CAP = 30000000
 ZONE = timezone(timedelta(hours=8))
-DEFAULTS = dict(enabled=True, graduate_volume=300000., other_volume=1500000., people=3,kol_count=2,
+DEFAULTS = dict(enabled=True, graduate_volume=200000., other_volume=1000000., people=3,kol_count=2,exclude_equities=True,
                 leader_days=50,leader_cap=30000000.,poll_seconds=15)
 
 
 def configuration():
-    return DEFAULTS | store.get('gmgn_config', {})
+    return DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True}
 
 
 def number(value):
@@ -62,6 +63,8 @@ def normalize(raw, chain, stamp):
         token['launchpad_status']=str(raw['launchpad_status'])
     token.update(chain=chain, observed=stamp)
     token['launch_known'] = 'launchpad' in raw and 'launchpad_platform' in raw
+    evidence = equities.equity_reason(token)
+    token.update(asset_class='equity' if evidence else 'unclassified', equity_evidence=evidence)
     return token
 
 
@@ -90,6 +93,8 @@ def launch_kind(token):
 
 
 def reason(token, cfg, now):
+    if equities.equity_reason(token):
+        return ''
     kol=token.get('renowned_count')
     if kol is None or kol<=cfg.get('kol_count',2):
         return ''
@@ -157,6 +162,8 @@ def pending_alerts():
     seen, result = set(), []
     for ident, rule, triggered, last_seen, data in rows:
         token = json.loads(data)
+        if equities.equity_reason(token):
+            continue
         key = (token['chain'],token['address'])
         if key not in seen:
             result.append(dict(id=ident,rule=rule,triggered=triggered,last_seen=last_seen,token=token))
@@ -167,9 +174,9 @@ def pending_alerts():
 def recent_alerts(limit=3):
     with store.connect() as con:
         schema(con)
-        rows=con.execute('SELECT id,rule,triggered,last_seen,acknowledged,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC LIMIT ?', (max(0,min(int(limit),3)),)).fetchall()
+        rows=con.execute('SELECT id,rule,triggered,last_seen,acknowledged,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC').fetchall()
     return [dict(id=i,rule=rule,triggered=triggered,last_seen=seen,acknowledged=bool(ack),token=json.loads(data))
-            for i,rule,triggered,seen,ack,data in rows]
+            for i,rule,triggered,seen,ack,data in rows if not equities.equity_reason(json.loads(data))][:max(0,min(int(limit),3))]
 
 
 def acknowledge(ids):
@@ -182,7 +189,8 @@ def acknowledge(ids):
 def pending_ids():
     with store.connect() as con:
         schema(con)
-        return [r[0] for r in con.execute('SELECT id FROM gmgn_alerts WHERE acknowledged=0')]
+        return [ident for ident,data in con.execute('SELECT id,data FROM gmgn_alerts WHERE acknowledged=0')
+                if not equities.equity_reason(json.loads(data))]
 
 
 def system_proxy():
@@ -287,6 +295,7 @@ class Client:
 
 class Monitor:
     def __init__(self, client=None):
+        self.refresh_equities = client is None
         self.client = client or Client()
 
     def refresh_hot(self,snapshot):
@@ -320,6 +329,8 @@ class Monitor:
             snapshot.update(heartbeat=time.time(),status='已暂停 GMGN 监控',enabled=False)
             store.put('gmgn_market',snapshot)
             return
+        if self.refresh_equities:
+            equities.refresh_catalogs()
         self.refresh_hot(snapshot)
         leaders=[]
         for chain in CHAINS:

@@ -37,11 +37,15 @@ def finite(value):
 
 TOKEN_FIELDS = ('chain address symbol name logo volume market_cap holder_count smart_degen_count '
                 'renowned_count open_timestamp creation_timestamp visiting_count launchpad '
-                'launchpad_platform launchpad_status launch_known observed')
+                'launchpad_platform launchpad_status launch_known observed asset_class equity_evidence')
 
 
 def token(value):
-    return fields(value, TOKEN_FIELDS) if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        return None
+    from gmgn_equities import equity_reason
+    evidence = equity_reason(value)
+    return fields(value, TOKEN_FIELDS) | dict(asset_class='equity' if evidence else 'unclassified',equity_evidence=evidence)
 
 
 @section('binance_market')
@@ -85,7 +89,7 @@ def gmgn_data(context):
                 hot=token(snapshot.get('hot')), volume_leader=token(snapshot.get('volume_leader')),
                 hot_leaders=[token(t) for t in leaders] if isinstance(leaders, list) else [],
                 chains=list(gmgn.CHAINS),
-                rules=fields(gmgn.configuration(), 'enabled graduate_volume other_volume people kol_count leader_days leader_cap poll_seconds'))
+                rules=fields(gmgn.configuration(), 'enabled graduate_volume other_volume people kol_count leader_days leader_cap poll_seconds exclude_equities'))
 
 
 @section('market_volume')
@@ -135,7 +139,17 @@ def read_events(cursor):
             has_more = len(new) > EVENT_LIMIT
             new = new[:EVENT_LIMIT]
             recent = con.execute(f'SELECT {columns} FROM {table} ORDER BY id DESC LIMIT 100').fetchall()
-            result[table] = dict(new=[decode(r) for r in new], recent=[decode(r) for r in recent], has_more=has_more)
+            decoded_new = [decode(r) for r in new]
+            decoded_recent = [decode(r) for r in recent]
+            suppressed = []
+            if table == 'gmgn_alerts':
+                from gmgn_equities import equity_reason
+                hidden = {r['id']:r for r in decoded_new+decoded_recent if equity_reason(r.get('token') or {})}
+                suppressed = [dict(id=r['id'],chain=r['chain'],address=r['address'],reason='tokenized_equity')
+                              for r in hidden.values()]
+                decoded_new = [r for r in decoded_new if r['id'] not in hidden]
+                decoded_recent = [r for r in decoded_recent if r['id'] not in hidden]
+            result[table] = dict(new=decoded_new, recent=decoded_recent, has_more=has_more, suppressed=suppressed)
             if new:
                 next_cursor[table] = new[-1]['id']
             more |= has_more
