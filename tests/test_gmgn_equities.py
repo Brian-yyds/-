@@ -95,12 +95,16 @@ def test_catalogs_validate_chain_and_malformed_data_does_not_clear_cache(isolate
 
 def test_current_rules_and_public_contract_keep_alarm_scope_local(isolated):
     assert sftp_sync.DEFAULTS['interval_seconds']==60
-    assert gmgn.DEFAULTS['graduate_volume']==200000
+    assert gmgn.DEFAULTS['graduate_volume']==150000
+    assert gmgn.DEFAULTS['kol_count']==1
     assert gmgn.DEFAULTS['other_volume']==1000000
     store.put('gmgn_config',dict(exclude_equities=False))
     assert gmgn.configuration()['exclude_equities'] is True
     store.put('gmgn_market',dict(hot=token(name='Stock - Backpack Securities')))
     snapshot=data_export.gmgn_data(dict(now=time.time()))
     assert snapshot['rules']['exclude_equities'] is True
+    assert snapshot['rules']['smart_money_required'] is False
+    assert snapshot['rules']['alarm_time_timezone']=='Asia/Shanghai'
+    assert 'people' not in snapshot['rules']
     assert 'hot' not in snapshot and snapshot['watch_ranking']['total']==0
     assert store.settings()['include_stocks'] is True  # Binance scope is unchanged.

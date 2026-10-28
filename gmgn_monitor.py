@@ -17,12 +17,14 @@ from gmgn_credentials import api_key
 CHAINS = ('sol', 'bsc', 'base', 'robinhood')
 CHAIN_LABELS = {'sol':'SOL','bsc':'BSC','base':'BASE','robinhood':'ROB'}
 ZONE = timezone(timedelta(hours=8))
-DEFAULTS = dict(enabled=True, graduate_volume=200000., other_volume=1000000., people=3,kol_count=2,exclude_equities=True,
+DEFAULTS = dict(enabled=True, graduate_volume=150000., other_volume=1000000., kol_count=1,exclude_equities=True,
                 poll_seconds=15,tracking_days=10,daily_limit=1)
 
 
 def configuration():
-    return DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True,'tracking_days':10,'daily_limit':1}
+    cfg=DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True,'tracking_days':10,'daily_limit':1}
+    cfg.pop('people',None)  # Retire the previous smart-money + KOL gate.
+    return cfg
 
 
 def number(value):
@@ -84,7 +86,7 @@ def reason(token, cfg, now, followup=False):
     if equities.equity_reason(token):
         return ''
     kol=token.get('renowned_count')
-    if kol is None or kol<=cfg.get('kol_count',2):
+    if kol is None or kol<=cfg.get('kol_count',DEFAULTS['kol_count']):
         return ''
     volume = token.get('volume')
     if volume is None:
@@ -101,10 +103,7 @@ def reason(token, cfg, now, followup=False):
     midnight = datetime.fromtimestamp(now, ZONE).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     if not followup and (opened is None or not midnight <= opened <= now):
         return ''
-    smart, kol = token.get('smart_degen_count'), token.get('renowned_count')
-    if smart is None or kol is None:
-        return ''
-    return ('毕业代币再次放量' if followup else '今日毕业放量') if volume > cfg['graduate_volume'] and smart + kol > cfg['people'] else ''
+    return ('毕业代币再次放量' if followup else '今日毕业放量') if volume > cfg['graduate_volume'] else ''
 
 
 def schema(con):

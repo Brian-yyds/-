@@ -85,8 +85,9 @@ def gmgn_data(context):
                 retry_at=snapshot.get('retry_at'),enabled=snapshot.get('enabled'),
                 chain_status={c:fields(v,'updated count capped') for c,v in snapshot.get('chains',{}).items()},
                 chains=list(gmgn.CHAINS),watch_ranking=ranking,
-                rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume people kol_count poll_seconds exclude_equities tracking_days daily_limit')|
-                      dict(daily_timezone='Asia/Shanghai',tracking_anchor='first_alert',repeat_requires_new_breakout=True))
+                rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume kol_count poll_seconds exclude_equities tracking_days daily_limit')|
+                      dict(daily_timezone='Asia/Shanghai',tracking_anchor='first_alert',repeat_requires_new_breakout=True,
+                           smart_money_required=False,alarm_time_timezone='Asia/Shanghai'))
 
 
 @section('market_volume')

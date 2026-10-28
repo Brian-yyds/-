@@ -28,15 +28,15 @@ def rules():
         enabled=st.checkbox('启用 SOL / BSC / Base / ROB',value=gc['enabled'])
         a,b=st.columns(2)
         kol=a.number_input('所有警报：KOL 人数大于',min_value=0,max_value=100000,value=int(gc['kol_count']))
-        people=b.number_input('今日毕业：聪明钱 + KOL 人数大于',min_value=0,max_value=100000,value=int(gc['people']))
         graduate=a.number_input('今日毕业：5分钟成交额大于 USD',min_value=1000.,value=float(gc['graduate_volume']),step=50000.)
         other=b.number_input('非发射台：5分钟成交额大于 USD',min_value=1000.,value=float(gc['other_volume']),step=100000.)
         poll=st.number_input('每轮扫描后的最短间隔（秒）',min_value=15,max_value=3600,value=int(gc['poll_seconds']),step=5)
-        st.caption('“大于”不包含等于。首次毕业警报要求北京时间当天；已报警毕业代币10日内复报沿用成交额和人数条件，不再要求今日毕业。两类都要求KOL超过阈值，排除币股/ETF。')
+        st.caption('“大于”不包含等于。今日毕业默认5分钟成交额超过150K美元、KOL大于1（至少2人）；不要求聪明钱人数或合计人数。非发射台默认超过100万且不限日期，两类共用KOL阈值，排除币股/ETF。')
+        st.caption('首次毕业警报要求北京时间当天；已报警毕业代币10日内再次突破沿用成交额和KOL条件，不再要求今日毕业。警报卡片直接显示首次触发时间，精确到秒，使用北京时间。')
         st.caption('同链同CA按北京时间每天最多报警一次；持续超阈值不重复报，成交额连续观测5分钟回落至阈值内后再突破才可复报。人数波动不重置成交额去重。重启与确认不重置去重。')
         st.caption('首次报警起10×24小时内跟踪，重复报警不续期，到期停止该轮跟踪并移出榜单。按真实近1小时美元成交额取前10；缺失/过期数据不伪造零成交。')
         if st.form_submit_button('保存 GMGN 规则',type='primary'):
-            store.put('gmgn_config',gc|dict(enabled=enabled,kol_count=kol,people=people,graduate_volume=graduate,
+            store.put('gmgn_config',gc|dict(enabled=enabled,kol_count=kol,graduate_volume=graduate,
                 other_volume=other,poll_seconds=poll))
             st.success('已保存，下一轮扫描生效。')
     gmgn_acknowledgement()
@@ -141,11 +141,10 @@ def diagnostics():
         kind=st.radio('代币类型',['今天毕业的发射台代币','非发射台代币','非今天毕业的发射台代币'],horizontal=True)
         volume=st.number_input('试算：5分钟成交额 USD',min_value=0.,value=float(gmgn.configuration()['graduate_volume'])+1.)
         a,b=st.columns(2)
-        smart=a.number_input('试算：聪明钱人数',min_value=0,value=1)
-        kol=b.number_input('试算：KOL人数',min_value=0,value=3)
+        kol=a.number_input('试算：KOL人数',min_value=0,value=2)
         if st.form_submit_button('检查是否触发'):
             direct=kind=='非发射台代币'
-            token=dict(volume=volume,smart_degen_count=smart,renowned_count=kol,launch_known=True,
+            token=dict(volume=volume,renowned_count=kol,launch_known=True,
                        launchpad='' if direct else 'pump',launchpad_platform='',launchpad_status='1',
                        open_timestamp=now if kind=='今天毕业的发射台代币' else now-2*86400)
             reason=gmgn.reason(token,gmgn.configuration(),now)

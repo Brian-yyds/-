@@ -90,6 +90,7 @@ h1,h2,h3{letter-spacing:-.025em}
 .gmgn-mini-name small{font-size:9px;color:#8fa39e;font-weight:400;margin-left:5px}
 .gmgn-mini-stats{display:flex;align-items:baseline;justify-content:space-between;gap:3px 8px;flex-wrap:wrap;font-size:10px;color:#94aaa2;line-height:1.4}
 .gmgn-mini-stats b{font-size:12px;color:#e3f0e8;font-variant-numeric:tabular-nums}
+.gmgn-alarm-time{grid-column:1/-1;color:#d5b2be;font-size:10px;font-weight:400;line-height:1.4;white-space:normal;font-variant-numeric:tabular-nums}
 .gmgn-mini+.gmgn-mini{border-top:1px solid #46323b;margin-top:6px;padding-top:6px}
 .gmgn-card.history-card .gmgn-mini-stats{color:#bba1aa}
 .gmgn-card .gmgn-empty{padding:10px 0 2px;font-size:11px}
@@ -242,7 +243,7 @@ def quick_prices(now=None):
     return '<div class="market-panel"><div class="overview-strip"><div class="top-strip">'+prices+'</div>'+market_volume_card(now)+'</div></div>'
 
 
-def gmgn_token_preview(token,tooltip='打开 GMGN',compact=False):
+def gmgn_token_preview(token,tooltip='打开 GMGN',compact=False,alarm_time=None):
     url=gmgn.token_url(token)
     if not url: return ''
     esc=lambda value:html.escape(str(value or ''),quote=True)
@@ -259,16 +260,20 @@ def gmgn_token_preview(token,tooltip='打开 GMGN',compact=False):
     chain=gmgn.CHAIN_LABELS.get(token['chain'],token['chain'].upper())
     tip=tooltip+' · '+token.get('name','')+' · '+chain+' · '+token['address']
     stats='' if compact else f'<div class="gmgn-mini-stats"><span>市值 <b>{value}</b></span><span>持有人 <b>{holders}</b></span></div>'
+    timestamp=''
+    if alarm_time is not None:
+        date=datetime.fromtimestamp(alarm_time,ZONE)
+        timestamp=f'<time class="gmgn-alarm-time" datetime="{date.isoformat(timespec="seconds")}">报警 {date:%Y-%m-%d %H:%M:%S}</time>'
     return (f'<a class="gmgn-token gmgn-mini" href="{url}" target="_blank" rel="noopener noreferrer" title="{esc(tip)}">'
             f'{image}<div class="gmgn-mini-name">{esc(token.get("symbol") or token.get("name"))}<small>{esc(chain)}</small></div>'
-            f'{stats}</a>')
+            f'{stats}{timestamp}</a>')
 
 
 def gmgn_alarm_card():
     records=gmgn.recent_alerts(3)
-    body=''.join(gmgn_token_preview(r['token'],r['rule']+' · '+clock(r['triggered']*1000)) for r in records)
+    body=''.join(gmgn_token_preview(r['token'],r['rule']+' · '+clock(r['triggered']*1000),alarm_time=r['triggered']) for r in records)
     if not body: body='<div class="gmgn-empty">暂无历史警报</div>'
-    return '<section class="gmgn-card history-card" data-gmgn-kind="alarms"><div class="gmgn-head"><span>GMGN 警报</span><small>最近3条</small></div>'+body+'</section>'
+    return '<section class="gmgn-card history-card" data-gmgn-kind="alarms"><div class="gmgn-head"><span>GMGN 警报</span><small>最近3条 · 北京时间</small></div>'+body+'</section>'
 
 
 def gmgn_tracking_card(now=None):

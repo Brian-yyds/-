@@ -42,13 +42,13 @@ def isolated(tmp_path,monkeypatch):
 
 
 
-def test_counts_sum_and_strict_threshold():
+def test_150k_and_two_kols_are_enough_without_smart_money():
     assert g.reason(token(),g.DEFAULTS,NOW)=='今日毕业放量'
-    assert not g.reason(token(smart_degen_count=0,renowned_count=3),g.DEFAULTS,NOW)
-    assert not g.reason(token(volume=200000),g.DEFAULTS,NOW)
-    assert not g.reason(token(volume=199999),g.DEFAULTS,NOW)
-    assert g.reason(token(smart_degen_count=0,renowned_count=4),g.DEFAULTS,NOW)
-    assert not g.reason(token(smart_degen_count=4,renowned_count=2),g.DEFAULTS,NOW)
+    assert g.reason(token(volume=150001,smart_degen_count=0,renowned_count=2),g.DEFAULTS,NOW)
+    assert g.reason(token(volume=150001,smart_degen_count=None,renowned_count=2),g.DEFAULTS,NOW)
+    assert not g.reason(token(volume=150000),g.DEFAULTS,NOW)
+    assert not g.reason(token(volume=149999),g.DEFAULTS,NOW)
+    assert not g.reason(token(smart_degen_count=100,renowned_count=1),g.DEFAULTS,NOW)
 
 
 
@@ -73,14 +73,15 @@ def test_direct_pool_million_rule_requires_kol_but_not_smart_or_date():
     assert g.reason(direct,g.DEFAULTS,NOW)=='非发射台放量'
     assert not g.reason(direct|{'volume':1000000},g.DEFAULTS,NOW)
     assert not g.reason(direct|{'volume':999999},g.DEFAULTS,NOW)
-    assert not g.reason(direct|{'renowned_count':2},g.DEFAULTS,NOW)
+    assert g.reason(direct|{'renowned_count':2,'smart_degen_count':None},g.DEFAULTS,NOW)
+    assert not g.reason(direct|{'renowned_count':1},g.DEFAULTS,NOW)
     assert not g.reason(direct|{'renowned_count':None},g.DEFAULTS,NOW)
     # Migrated launchpad token can retain a DEX label. Do not treat it as direct.
     assert not g.reason(direct|{'launchpad':'fourmeme','open_timestamp':NOW-86400},g.DEFAULTS,NOW)
 
 
 
-@pytest.mark.parametrize('field',['volume','smart_degen_count','renowned_count','open_timestamp'])
+@pytest.mark.parametrize('field',['volume','renowned_count','open_timestamp'])
 def test_missing_numeric_fields_do_not_fabricate_alerts(field):
     assert not g.reason(token(**{field:None}),g.DEFAULTS,NOW)
     assert not g.reason(token(**{field:float('nan')}),g.DEFAULTS,NOW)
@@ -132,6 +133,9 @@ def test_runtime_threshold_changes(isolated):
     store.put('gmgn_config',dict(graduate_volume=300000,people=5))
     assert not g.reason(token(),g.configuration(),NOW)
     assert g.configuration()['other_volume']==1000000
+    assert 'people' not in g.configuration()
+    store.put('gmgn_config',dict(people=100000))
+    assert g.reason(token(volume=150001,renowned_count=2,smart_degen_count=None),g.configuration(),NOW)
 
 
 
@@ -171,9 +175,27 @@ def test_history_keeps_only_three_latest_including_acknowledged(isolated):
     assert markup.count('class="gmgn-token gmgn-mini"')==3
     assert 'ALARM_1' not in markup
     assert '今日毕业放量' in markup  # available in hover text
+    assert '最近3条 · 北京时间' in markup
+    assert markup.count('<time class="gmgn-alarm-time"')==3
+    expected=datetime.fromtimestamp(NOW+4,g.ZONE)
+    assert f'>报警 {expected:%Y-%m-%d %H:%M:%S}</time>' in markup
+    assert f'datetime="{expected.isoformat(timespec="seconds")}"' in markup
     assert '5m成交' not in markup and 'class="gmgn-ca"' not in markup
     g.record_scan('sol',[],g.DEFAULTS,NOW+40*86400)
     assert len(g.recent_alerts())==3  # retain the latest three even after archive pruning
+
+
+def test_visible_alarm_time_stays_at_original_trigger_when_data_updates(isolated):
+    from monitor_ui import gmgn_alarm_card
+    g.record_scan('sol',[token(volume=150001,renowned_count=2,smart_degen_count=None)],g.DEFAULTS,NOW)
+    g.record_scan('sol',[token(volume=180000,renowned_count=2,smart_degen_count=None)],g.DEFAULTS,NOW+60)
+    record=g.recent_alerts()[0]
+    assert record['triggered']==NOW and record['last_seen']==NOW+60
+    original=datetime.fromtimestamp(NOW,g.ZONE)
+    later=datetime.fromtimestamp(NOW+60,g.ZONE)
+    markup=gmgn_alarm_card()
+    assert f'>报警 {original:%Y-%m-%d %H:%M:%S}</time>' in markup
+    assert f'>报警 {later:%Y-%m-%d %H:%M:%S}</time>' not in markup
 
 
 
