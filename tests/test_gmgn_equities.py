@@ -102,5 +102,5 @@ def test_current_rules_and_public_contract_keep_alarm_scope_local(isolated):
     store.put('gmgn_market',dict(hot=token(name='Stock - Backpack Securities')))
     snapshot=data_export.gmgn_data(dict(now=time.time()))
     assert snapshot['rules']['exclude_equities'] is True
-    assert snapshot['hot']['asset_class']=='equity'  # Raw leader collection remains available.
+    assert 'hot' not in snapshot and snapshot['watch_ranking']['total']==0
     assert store.settings()['include_stocks'] is True  # Binance scope is unchanged.

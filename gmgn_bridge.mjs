@@ -30,9 +30,6 @@ try {
   let input='';
   for await (const part of process.stdin) input+=part;
   const request=JSON.parse(input);
-  const leaderDays=request.leader_days??50;
-  const leaderCap=request.leader_cap??30000000;
-  if(!Number.isInteger(leaderDays)||leaderDays<1||leaderDays>3650||!Number.isFinite(leaderCap)||leaderCap<=0||leaderCap>1e12) throw new Error('Invalid leader bounds');
   const {OpenApiClient}=await import(pathToFileURL(join(packageRoot,'dist/client/OpenApiClient.js')).href);
   const {sanitizeForOutputWithCount}=await import(pathToFileURL(join(packageRoot,'dist/sanitize.js')).href);
   const client=new OpenApiClient({apiKey:process.env.GMGN_API_KEY,host:'https://openapi.gmgn.ai'});
@@ -40,14 +37,22 @@ try {
   if(request.command==='trending' && ['sol','bsc','base','robinhood'].includes(request.chain)) {
     data=await client.getTrendingSwaps(request.chain,'5m',{
       order_by:'volume',direction:'desc',limit:100,filters:['is_internal_market','is_out_market'],
-      ...(request.leader_filter ? {max_created:`${leaderDays}d`,max_marketcap:leaderCap} : {})
     });
-  } else if(request.command==='hot-searches') {
-    const interval=request.hot_interval??'5m';
-    if(interval!=='5m') throw new Error('Invalid hot-search interval');
-    data=await client.getHotSearches(['sol','bsc','base','robinhood'].map(chain=>({
-      label:'hot-search',chain,interval,limit:500,filters:[]
-    })));
+  } else if(request.command==='info-batch' && Array.isArray(request.tokens) && request.tokens.length>=1 && request.tokens.length<=10) {
+    data=[];
+    for(const [index,t] of request.tokens.entries()) {
+      const valid=['sol','bsc','base','robinhood'].includes(t.chain) && typeof t.address==='string' &&
+        (t.chain==='sol' ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(t.address) : /^0x[0-9a-fA-F]{40}$/.test(t.address));
+      if(!valid) throw new Error('Invalid read-only token identity');
+      if(index) await new Promise(resolve=>setTimeout(resolve,1100));
+      try {
+        const info=await client.getTokenInfo(t.chain,t.address);
+        data.push({...t,ok:true,data:info,observed:Date.now()/1000});
+      } catch(error) {
+        if([401,403,429].includes(error.status)||String(error.apiError||'').includes('RATE_LIMIT')) throw error;
+        data.push({...t,ok:false});
+      }
+    }
   } else {throw new Error('Read-only request not allowed');}
   const safe=sanitizeForOutputWithCount(data);
   process.stdout.write(JSON.stringify({ok:true,data:safe.data,sanitized:safe.changed}));

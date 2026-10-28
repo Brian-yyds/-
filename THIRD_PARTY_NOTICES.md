@@ -6,7 +6,7 @@
 
 2026-10-28新增采集同步：SFTP 使用 Paramiko 5.1.0（LGPL-2.1-or-later，https://github.com/paramiko/paramiko ），ed25519 密钥生成使用 cryptography；复用 SSH/SFTP 协议和密码学库，不自行实现密钥算法。Windows 私钥通过既有 DPAPI 保险箱加密，仅本机用户可解密。主机身份采用固定公钥校验，不自动信任未知或变化的公钥。接口依据 https://docs.paramiko.org/en/stable/api/client.html 和 https://docs.paramiko.org/en/stable/api/sftp.html 。
 
-2026-10-25新增GMGN：通过已安装的 gmgn-cli 1.6.9（MIT，https://github.com/GMGNAI/gmgn-skills ）复用官方 OpenApiClient、输出清理及限频处理，仅查询5m成交额榜和热搜榜。gmgn_bridge.mjs 的代理初始化参考该包 dist/index.js（MIT）。不打包node_modules或技能副本，不调用swap/order，不加载全局私钥配置。规则与中文紧凑界面属于本项目适配层。
+2026-10-25新增GMGN：通过已安装的 gmgn-cli 1.6.9（MIT，https://github.com/GMGNAI/gmgn-skills ）复用官方 OpenApiClient、输出清理及限频处理，仅查询5m候选与已报警代币详情（2026-10-29起不再查询热搜）。gmgn_bridge.mjs 的代理初始化参考该包 dist/index.js（MIT）。不打包node_modules或技能副本，不调用swap/order，不加载全局私钥配置。规则与中文紧凑界面属于本项目适配层。
 
 2026-10-17新增订单流与流动性监控、持续确认去重，以及AI协议适配。行情仍直接使用币安公开的aggTrade、K线、OI和depth；AI通过Requests调用用户配置的标准接口，不引入另一个研究或交易框架。Windows密钥保险箱直接调用系统DPAPI，不自行实现加密算法。
 

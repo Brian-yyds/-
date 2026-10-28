@@ -76,7 +76,9 @@ def test_export_uses_current_rules_keeps_asset_scope_and_omits_credentials(isola
     assert {r['asset_type'] for r in market['rows']}=={'crypto','stock','commodity'}
     assert market['focus']['BTCUSDT']['change']==pytest.approx(10)
     assert set(market['rankings']['up'])=={'ALTUSDT','SOXLUSDT','XAUUSDT'}
-    assert packet['modules']['gmgn']['data']['hot_fresh']
+    assert packet['modules']['gmgn']['version']==2
+    assert packet['modules']['gmgn']['data']['watch_ranking']['total']==1
+    assert 'hot' not in packet['modules']['gmgn']['data']
     assert packet['modules']['market_volume']['data']['days'][0]['top10_quote']==4
     assert packet['events']['gmgn_alerts']['new'][0]['token']['volume']==300001
 

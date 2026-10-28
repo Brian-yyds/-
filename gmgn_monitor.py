@@ -11,22 +11,18 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import store
 import gmgn_equities as equities
+import gmgn_tracking as tracking
 from gmgn_credentials import api_key
 
 CHAINS = ('sol', 'bsc', 'base', 'robinhood')
-HOT_SEARCH_INTERVAL = '5m'
-# Match the user's GMGN screen: Hot Searches tab, 5m selected, volume descending.
-HOT_SEARCH_SCOPE = dict(chains=list(CHAINS),interval=HOT_SEARCH_INTERVAL,order_by='volume',direction='desc',filtered=False)
 CHAIN_LABELS = {'sol':'SOL','bsc':'BSC','base':'BASE','robinhood':'ROB'}
-LEADER_MAX_DAYS = 50
-LEADER_MAX_CAP = 30000000
 ZONE = timezone(timedelta(hours=8))
 DEFAULTS = dict(enabled=True, graduate_volume=200000., other_volume=1000000., people=3,kol_count=2,exclude_equities=True,
-                leader_days=50,leader_cap=30000000.,poll_seconds=15)
+                poll_seconds=15,tracking_days=10,daily_limit=1)
 
 
 def configuration():
-    return DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True}
+    return DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True,'tracking_days':10,'daily_limit':1}
 
 
 def number(value):
@@ -68,14 +64,6 @@ def normalize(raw, chain, stamp):
     return token
 
 
-def leader_eligible(token, now, cfg=None):
-    cfg=DEFAULTS if cfg is None else cfg
-    created=token.get('creation_timestamp')
-    cap=token.get('market_cap')
-    return (created is not None and created>0 and 0<=now-created<=cfg['leader_days']*86400
-            and cap is not None and 0<cap<=cfg['leader_cap'])
-
-
 def launch_kind(token):
     # `pool_*` is a DEX pool label, not evidence of a launchpad. A retained
     # launchpad ID still takes priority after migration to a pool_* platform.
@@ -92,7 +80,7 @@ def launch_kind(token):
     return 'unknown'
 
 
-def reason(token, cfg, now):
+def reason(token, cfg, now, followup=False):
     if equities.equity_reason(token):
         return ''
     kol=token.get('renowned_count')
@@ -111,48 +99,22 @@ def reason(token, cfg, now):
     opened = token.get('open_timestamp')
     # Open market time after migration; never substitute token creation time.
     midnight = datetime.fromtimestamp(now, ZONE).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    if opened is None or not midnight <= opened <= now:
+    if not followup and (opened is None or not midnight <= opened <= now):
         return ''
     smart, kol = token.get('smart_degen_count'), token.get('renowned_count')
     if smart is None or kol is None:
         return ''
-    return '今日毕业放量' if volume > cfg['graduate_volume'] and smart + kol > cfg['people'] else ''
+    return ('毕业代币再次放量' if followup else '今日毕业放量') if volume > cfg['graduate_volume'] and smart + kol > cfg['people'] else ''
 
 
 def schema(con):
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_alerts (id INTEGER PRIMARY KEY, chain TEXT, address TEXT, rule TEXT, triggered REAL, last_seen REAL, acknowledged INTEGER DEFAULT 0, data TEXT)')
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_episodes (chain TEXT, address TEXT, rule TEXT, active INTEGER, last_true REAL, below_since REAL, observed REAL, PRIMARY KEY(chain,address,rule))')
+    tracking.schema(con)
 
 
 def record_scan(chain, tokens, cfg, stamp):
-    """One record per continuous episode. Missing from top-N is not a reset."""
-    with store.connect() as con:
-        schema(con)
-        for token in tokens:
-            rule = reason(token, cfg, stamp)
-            address = token['address']
-            previous = con.execute('SELECT rule,active,last_true,below_since,observed FROM gmgn_episodes WHERE chain=? AND address=?', (chain,address)).fetchall()
-            if rule:
-                old = next((r for r in previous if r[0] == rule), None)
-                if not old or not old[1]:
-                    con.execute('INSERT INTO gmgn_alerts(chain,address,rule,triggered,last_seen,data) VALUES (?,?,?,?,?,?)',
-                                (chain,address,rule,stamp,stamp,json.dumps(token,ensure_ascii=False)))
-                else:
-                    con.execute('UPDATE gmgn_alerts SET last_seen=?, data=? WHERE id=(SELECT MAX(id) FROM gmgn_alerts WHERE chain=? AND address=? AND rule=?)',
-                                (stamp,json.dumps(token,ensure_ascii=False),chain,address,rule))
-                con.execute('INSERT OR REPLACE INTO gmgn_episodes VALUES (?,?,?,?,?,?,?)', (chain,address,rule,1,stamp,None,stamp))
-            # Require five observed minutes below the rule before rearming.
-            for old_rule, active, last_true, below_since, observed in previous:
-                if active and old_rule != rule:
-                    valid = token.get('volume') is not None and token.get('renowned_count') is not None and launch_kind(token) != 'unknown'
-                    if old_rule=='今日毕业放量':
-                        valid = valid and all(token.get(k) is not None for k in ('smart_degen_count','renowned_count','open_timestamp')) and token.get('launchpad_status') in ('0','1','2')
-                    if not valid:
-                        continue
-                    below_since = below_since if below_since is not None and stamp-observed<=60 else stamp
-                    con.execute('UPDATE gmgn_episodes SET active=?, below_since=?, observed=? WHERE chain=? AND address=? AND rule=?',
-                                (int(stamp-below_since<300),below_since,stamp,chain,address,old_rule))
-        con.execute('DELETE FROM gmgn_alerts WHERE acknowledged=1 AND triggered<? AND id NOT IN (SELECT id FROM gmgn_alerts ORDER BY triggered DESC,id DESC LIMIT 3)', (stamp-30*86400,))
+    return tracking.record_scan(chain,tokens,cfg,stamp)
 
 
 def pending_alerts():
@@ -175,8 +137,14 @@ def recent_alerts(limit=3):
     with store.connect() as con:
         schema(con)
         rows=con.execute('SELECT id,rule,triggered,last_seen,acknowledged,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC').fetchall()
-    return [dict(id=i,rule=rule,triggered=triggered,last_seen=seen,acknowledged=bool(ack),token=json.loads(data))
-            for i,rule,triggered,seen,ack,data in rows if not equities.equity_reason(json.loads(data))][:max(0,min(int(limit),3))]
+    result=[];days=set()
+    for i,rule,triggered,seen,ack,data in rows:
+        token=json.loads(data)
+        key=(*tracking.identity(token['chain'],token['address']),tracking.day(triggered))
+        if equities.equity_reason(token) or key in days:continue
+        days.add(key)
+        result.append(dict(id=i,rule=rule,triggered=triggered,last_seen=seen,acknowledged=bool(ack),token=token))
+    return result[:max(0,min(int(limit),3))]
 
 
 def acknowledge(ids):
@@ -249,18 +217,14 @@ class Client:
         request = {'command':args[1]}
         if args[1]=='trending':
             request['chain']=args[args.index('--chain')+1]
-            if '--max-created' in args:
-                request['leader_filter']=True
-                request['leader_days']=int(args[args.index('--max-created')+1].removesuffix('d'))
-                request['leader_cap']=float(args[args.index('--max-marketcap')+1])
-        elif args[1]=='hot-searches' and '--params' in args:
+        elif args[:2]==['token','info-batch']:
             params=json.loads(args[args.index('--params')+1])
-            if [p.get('chain') for p in params]!=list(CHAINS) or any(p.get('interval')!=HOT_SEARCH_INTERVAL for p in params):
-                raise ValueError('热搜仅允许已配置四链的5分钟时间范围')
-            request['hot_interval']=HOT_SEARCH_INTERVAL
+            if not isinstance(params,list) or not 1<=len(params)<=10 or any(not isinstance(p,dict) or not valid_address(p.get('chain'),p.get('address')) for p in params):
+                raise ValueError('只允许最多10个已验证地址的只读代币查询')
+            request['tokens']=[dict(chain=p['chain'],address=p['address']) for p in params]
         try:
             proc = subprocess.run([node,str(store.ROOT/'gmgn_bridge.mjs'),str(script)], cwd=store.ROOT, env=env,
-                                  input=json.dumps(request),capture_output=True,text=True,encoding='utf-8',timeout=25,
+                                  input=json.dumps(request),capture_output=True,text=True,encoding='utf-8',timeout=80 if args[1]=='info-batch' else 25,
                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
         except (subprocess.TimeoutExpired, OSError):
             raise QueryError('GMGN 连接超时，稍后重试', 30)
@@ -287,8 +251,8 @@ class Client:
         return data
 
     def query(self, args):
-        # The UI cannot supply arbitrary commands. Only these two read routes.
-        if tuple(args[:2]) not in (('market','trending'),('market','hot-searches')):
+        # No trade commands or arbitrary endpoints are accepted.
+        if tuple(args[:2]) not in (('market','trending'),('token','info-batch')):
             raise ValueError('仅允许 GMGN 只读行情查询')
         return self.execute(args)
 
@@ -298,70 +262,46 @@ class Monitor:
         self.refresh_equities = client is None
         self.client = client or Client()
 
-    def refresh_hot(self,snapshot):
-        # Match the selected website sort: hot-search membership, then 5m USD
-        # volume descending. Search heat only resolves equal-volume ties.
-        params=[dict(label='hot-search',chain=c,interval=HOT_SEARCH_INTERVAL,limit=500,filters=[]) for c in CHAINS]
-        hot=self.client.query(['market','hot-searches','--params',json.dumps(params),'--raw'])
-        if not isinstance(hot,list) or any(not isinstance(block,dict) for block in hot):
-            raise QueryError('GMGN 热搜格式变化，已保留上次数据')
-        stamp=time.time()
-        tops=[]
-        for block in hot:
-            chain=block.get('chain')
-            if chain in CHAINS and block.get('interval')==HOT_SEARCH_INTERVAL:
-                tokens=block.get('tokens',[])
-                if not isinstance(tokens,list):
-                    raise QueryError('GMGN 热搜格式变化，已保留上次数据')
-                tops.extend(t for raw in tokens if (t:=normalize(raw,chain,stamp)) and t['volume'] is not None)
-        tops.sort(key=lambda t:(t['volume'],t['visiting_count'] if t['visiting_count'] is not None else -1),reverse=True)
-        snapshot.update(hot=tops[0] if tops else None,hot_leaders=tops[:5],
-                        hot_updated=stamp,hot_scope=HOT_SEARCH_SCOPE,heartbeat=stamp,
-                        enabled=True,status='正在扫描四链')
-        # Publish immediately; a slow or failed volume scan must not hold it back.
-        store.put('gmgn_market',snapshot)
-
     def cycle(self):
-        cfg = configuration()
-        snapshot = store.get('gmgn_market',{})
+        cfg=configuration()
+        snapshot=store.get('gmgn_market',{})
+        for obsolete in ('hot','hot_leaders','hot_scope','hot_updated','volume_leader','leader_filter'):
+            snapshot.pop(obsolete,None)
         snapshot.setdefault('chains',{})
         if not cfg['enabled']:
             snapshot.update(heartbeat=time.time(),status='已暂停 GMGN 监控',enabled=False)
             store.put('gmgn_market',snapshot)
             return
-        if self.refresh_equities:
-            equities.refresh_catalogs()
-        self.refresh_hot(snapshot)
-        leaders=[]
+        if self.refresh_equities:equities.refresh_catalogs()
+        errors=[]
         for chain in CHAINS:
-            result = self.client.query(['market','trending','--chain',chain,'--interval','5m',
-                                        '--order-by','volume','--direction','desc','--limit','100',
-                                        '--filter','is_internal_market','is_out_market','--raw'])
-            if not isinstance(result,dict) or not isinstance(result.get('rank'),list):
-                raise QueryError('GMGN 榜单格式变化，已停止本轮判断')
-            stamp = time.time()
-            tokens = [t for raw in result['rank'] if (t:=normalize(raw,chain,stamp))]
-            record_scan(chain,tokens,cfg,stamp)
-            # Filter upstream BEFORE top-100 truncation, then enforce the bounds
-            # locally. Keep the original alarm scan independent of leader filters.
-            eligible=self.client.query(['market','trending','--chain',chain,'--interval','5m',
-                                       '--max-created',str(cfg['leader_days'])+'d','--max-marketcap',str(cfg['leader_cap']),'--raw'])
-            if not isinstance(eligible,dict) or not isinstance(eligible.get('rank'),list):
-                raise QueryError('GMGN 筛选榜单格式变化，已保留上次榜首')
-            leaders.extend(t for raw in eligible['rank'] if (t:=normalize(raw,chain,time.time()))
-                           and t['volume'] is not None and leader_eligible(t,time.time(),cfg))
-            # Keep below-threshold observations to rearm a cooled-off episode.
-            # Warn only if the top-100 boundary could omit qualifying volume.
-            threshold=min(cfg['graduate_volume'],cfg['other_volume'])
-            capped=len(tokens)>=100 and any(t['volume'] is None or t['volume']>=threshold for t in tokens[-1:])
-            snapshot['chains'][chain] = dict(updated=stamp,count=len(tokens),capped=capped)
-            snapshot.update(heartbeat=stamp,enabled=True,status='正在扫描四链')
-            store.put('gmgn_market',snapshot)
-        stamp = time.time()
-        snapshot.update(heartbeat=stamp,enabled=True,status='监控中',last_success=stamp,retry_at=0)
-        snapshot['volume_leader'] = max(leaders,key=lambda t:t['volume']) if leaders else None
-        snapshot['leader_filter'] = dict(max_days=cfg['leader_days'],max_market_cap=cfg['leader_cap'])
+            try:
+                result=self.client.query(['market','trending','--chain',chain,'--interval','5m',
+                    '--order-by','volume','--direction','desc','--limit','100','--filter','is_internal_market','is_out_market','--raw'])
+                if not isinstance(result,dict) or not isinstance(result.get('rank'),list):
+                    raise QueryError('GMGN 候选数据格式变化，稍后重试')
+                stamp=time.time()
+                tokens=[t for raw in result['rank'] if (t:=normalize(raw,chain,stamp))]
+                record_scan(chain,tokens,cfg,stamp)
+                threshold=min(cfg['graduate_volume'],cfg['other_volume'])
+                capped=len(tokens)>=100 and any(t['volume'] is None or t['volume']>=threshold for t in tokens[-1:])
+                snapshot['chains'][chain]=dict(updated=stamp,count=len(tokens),capped=capped)
+                snapshot.update(heartbeat=stamp,enabled=True,status='正在扫描四链')
+                store.put('gmgn_market',snapshot)
+            except QueryError as error:
+                if store.get('gmgn_rate_limit_until',0)>time.time():raise
+                errors.append(error)
+        try:tracking.refresh_info(self.client,cfg)
+        except QueryError as error:
+            if store.get('gmgn_rate_limit_until',0)>time.time():raise
+            errors.append(error)
+        stamp=time.time()
+        snapshot.update(heartbeat=stamp,enabled=True,status='监控中' if not errors else str(errors[0]),
+                        retry_at=stamp+max(e.delay for e in errors) if errors else 0)
+        snapshot['watch_ranking']=tracking.ranking_snapshot(stamp)
+        if not errors:snapshot['last_success']=stamp
         store.put('gmgn_market',snapshot)
+        if errors:raise errors[0]
 
 
 def run():

@@ -75,21 +75,18 @@ def binance_market(context):
                 spike_window_minutes=15)
 
 
-@section('gmgn')
+@section('gmgn',version=2)
 def gmgn_data(context):
     import gmgn_monitor as gmgn
-    snapshot = store.get('gmgn_market', {})
-    leaders = snapshot.get('hot_leaders', [])
-    return dict(observed_at=snapshot.get('last_success'), heartbeat=snapshot.get('heartbeat'),
-                hot_updated=snapshot.get('hot_updated'), retry_at=snapshot.get('retry_at'),
-                enabled=snapshot.get('enabled'),
-                hot_fresh=0 <= context['now']-snapshot.get('hot_updated',0) <= 60,
-                scan_fresh=0 <= context['now']-snapshot.get('last_success',0) <= 60,
-                chain_status={chain:fields(value, 'updated count capped') for chain,value in snapshot.get('chains',{}).items()},
-                hot=token(snapshot.get('hot')), volume_leader=token(snapshot.get('volume_leader')),
-                hot_leaders=[token(t) for t in leaders] if isinstance(leaders, list) else [],
-                chains=list(gmgn.CHAINS),
-                rules=fields(gmgn.configuration(), 'enabled graduate_volume other_volume people kol_count leader_days leader_cap poll_seconds exclude_equities'))
+    snapshot=store.get('gmgn_market',{})
+    ranking=gmgn.tracking.ranking_snapshot(context['now'])
+    ranking['rows']=[fields(r,'chain address first_alert expires_at last_alert volume_1h volume_observed')|{'token':token(r['token'])} for r in ranking['rows']]
+    return dict(observed_at=snapshot.get('last_success'),heartbeat=snapshot.get('heartbeat'),
+                retry_at=snapshot.get('retry_at'),enabled=snapshot.get('enabled'),
+                chain_status={c:fields(v,'updated count capped') for c,v in snapshot.get('chains',{}).items()},
+                chains=list(gmgn.CHAINS),watch_ranking=ranking,
+                rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume people kol_count poll_seconds exclude_equities tracking_days daily_limit')|
+                      dict(daily_timezone='Asia/Shanghai',tracking_anchor='first_alert',repeat_requires_new_breakout=True))
 
 
 @section('market_volume')
@@ -127,6 +124,10 @@ def read_events(cursor):
             if table not in tables:
                 result[table] = dict(new=[], recent=[], has_more=False)
                 continue
+            if table=='gmgn_alerts':
+                import gmgn_monitor as gmgn
+                gmgn.schema(con)
+                canonical={r[0] for r in con.execute('SELECT alert_id FROM gmgn_daily')}
             columns = ('id,time,symbol,direction,change,base_price,price,base_time,event_time,basis,acknowledged'
                        if table == 'spike_alerts' else 'id,chain,address,rule,triggered,last_seen,acknowledged,data')
             def decode(row):
@@ -144,8 +145,8 @@ def read_events(cursor):
             suppressed = []
             if table == 'gmgn_alerts':
                 from gmgn_equities import equity_reason
-                hidden = {r['id']:r for r in decoded_new+decoded_recent if equity_reason(r.get('token') or {})}
-                suppressed = [dict(id=r['id'],chain=r['chain'],address=r['address'],reason='tokenized_equity')
+                hidden = {r['id']:r for r in decoded_new+decoded_recent if equity_reason(r.get('token') or {}) or r['id'] not in canonical}
+                suppressed = [dict(id=r['id'],chain=r['chain'],address=r['address'],reason='tokenized_equity' if equity_reason(r.get('token') or {}) else 'duplicate_beijing_day')
                               for r in hidden.values()]
                 decoded_new = [r for r in decoded_new if r['id'] not in hidden]
                 decoded_recent = [r for r in decoded_recent if r['id'] not in hidden]

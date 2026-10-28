@@ -126,9 +126,9 @@ a.contract-link:hover{color:#b4ed78!important;text-decoration:underline!importan
 .gmgn-panel{background:#111e22;border:1px solid #33594d;border-radius:12px;overflow:hidden;min-width:0}
 .gmgn-panel>.rank-title{border-color:#33594d}.gmgn-panel h2{color:#a4dcb5!important}
 .gmgn-combined{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);min-height:var(--panel-body)}
-.gmgn-leaders{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));min-width:0}
+.gmgn-hourly{min-width:0}.gmgn-hour-scroll{height:calc(var(--panel-body) - 32px);overflow-y:auto;scrollbar-width:thin}.gmgn-hour-table{width:100%;border-collapse:collapse;table-layout:fixed;font-variant-numeric:tabular-nums}.gmgn-hour-table th{position:sticky;top:0;background:#111e22;color:#8fa2ba;font-size:9px;text-align:left;height:24px}.gmgn-hour-table td{height:36px;border-bottom:1px solid #294338;font-size:11px}.gmgn-hour-table th:first-child,.gmgn-hour-table td:first-child{width:9%;color:#7e998d}.gmgn-hour-table th:last-child,.gmgn-hour-table td:last-child{width:35%;text-align:right;white-space:nowrap;font-weight:650}.gmgn-hourly .gmgn-mini{padding:2px 0!important;grid-template-columns:20px minmax(0,1fr)!important;gap:4px!important}.gmgn-hourly .gmgn-mini .gmgn-logo{width:20px!important;height:20px!important}.gmgn-hourly .gmgn-mini-name{font-size:11px!important}
 .gmgn-combined .gmgn-card{border:0;border-radius:0;padding:8px;min-width:0}
-.gmgn-leaders .leader-card+.leader-card{border-top:1px solid #33594d}
+
 .gmgn-combined .history-card{border-left:1px solid #633b49}
 .gmgn-combined .gmgn-head{font-size:11px;gap:3px}.gmgn-combined .gmgn-head small{font-size:9px}
 .gmgn-combined .gmgn-mini{grid-template-columns:26px minmax(0,1fr);gap:4px 5px}
@@ -235,7 +235,7 @@ def quick_prices(now=None):
     return '<div class="market-panel"><div class="overview-strip"><div class="top-strip">'+prices+'</div>'+market_volume_card(now)+'</div></div>'
 
 
-def gmgn_token_preview(token,tooltip='打开 GMGN'):
+def gmgn_token_preview(token,tooltip='打开 GMGN',compact=False):
     url=gmgn.token_url(token)
     if not url: return ''
     esc=lambda value:html.escape(str(value or ''),quote=True)
@@ -251,9 +251,10 @@ def gmgn_token_preview(token,tooltip='打开 GMGN'):
     holders=f'{token["holder_count"]:,.0f}' if token.get('holder_count') is not None else '—'
     chain=gmgn.CHAIN_LABELS.get(token['chain'],token['chain'].upper())
     tip=tooltip+' · '+token.get('name','')+' · '+chain+' · '+token['address']
+    stats='' if compact else f'<div class="gmgn-mini-stats"><span>市值 <b>{value}</b></span><span>持有人 <b>{holders}</b></span></div>'
     return (f'<a class="gmgn-token gmgn-mini" href="{url}" target="_blank" rel="noopener noreferrer" title="{esc(tip)}">'
             f'{image}<div class="gmgn-mini-name">{esc(token.get("symbol") or token.get("name"))}<small>{esc(chain)}</small></div>'
-            f'<div class="gmgn-mini-stats"><span>市值 <b>{value}</b></span><span>持有人 <b>{holders}</b></span></div></a>')
+            f'{stats}</a>')
 
 
 def gmgn_alarm_card():
@@ -263,43 +264,29 @@ def gmgn_alarm_card():
     return '<section class="gmgn-card history-card" data-gmgn-kind="alarms"><div class="gmgn-head"><span>GMGN 警报</span><small>最近3条</small></div>'+body+'</section>'
 
 
-def gmgn_card(now=None,kind='hot',snapshot=None,show_status=True):
+def gmgn_tracking_card(now=None):
     now=time.time() if now is None else now
-    snapshot=store.get('gmgn_market',{}) if snapshot is None else snapshot
-    fresh=0<=now-snapshot.get('hot_updated' if kind=='hot' else 'last_success',0)<=60
-    idle_label='热搜 #1' if kind=='hot' else '5m 成交额 #1'
-    idle=snapshot.get('hot' if kind=='hot' else 'volume_leader')
-    cfg=gmgn.configuration()
-    eligible=(snapshot.get('hot_scope')==gmgn.HOT_SEARCH_SCOPE) if kind=='hot' else (idle and gmgn.leader_eligible(idle,now,cfg))
-    empty='正在更新四链热搜' if kind=='hot' and not eligible else '暂无热搜数据' if kind=='hot' else '暂无符合条件的代币'
-    tooltip=(f'热搜名单 · 5m成交额 ${idle["volume"]:,.0f} · 更新 {clock(snapshot["hot_updated"]*1000)}'
-             if kind=='hot' and idle and eligible and idle.get('volume') is not None and snapshot.get('hot_updated') else '打开 GMGN')
-    body=gmgn_token_preview(idle,tooltip) if idle and eligible else f'<div class="gmgn-empty">{empty}</div>'
-    status=snapshot.get('status','正在连接')
-    if not gmgn.configuration()['enabled']: status='已暂停 GMGN 监控'
-    if status in ('监控中','正在扫描四链') and not fresh: status='行情延迟'
-    if snapshot.get('retry_at',0)>now: status+=' · '+clock(snapshot['retry_at']*1000).split(' ')[-1]+' 重试'
-    capped=any(v.get('capped') for v in snapshot.get('chains',{}).values())
-    if capped: status+=' · 榜单达100条上限'
-    normal=status in ('监控中','正在扫描四链') and fresh and not capped
-    notice='' if normal or not show_status else f'<div class="gmgn-foot"><span>{html.escape(status)}</span></div>'
-    bounds='5m 成交额 ↓' if kind=='hot' else f'{cfg["leader_days"]}天 · ≤{cfg["leader_cap"]/1e6:g}M'
-    tip='SOL / BSC / Base / ROB 四链热搜名单，按5分钟美元成交额降序；不加天数、市值或警报筛选' if kind=='hot' else '成交榜首按创建时间和市值筛选'
-    return f'<section class="gmgn-card leader-card" data-gmgn-kind="{kind}"><div class="gmgn-head"><span>{idle_label}</span><small title="{tip}">{bounds}</small></div>'+body+notice+'</section>'
+    ranking=gmgn.tracking.ranking_snapshot(now)
+    body=[]
+    for index,row in enumerate(ranking['rows'],1):
+        volume=row['volume_1h']
+        label=f'${volume/1e6:.2f}M' if volume>=1e6 else f'${volume/1e3:.1f}K' if volume>=1000 else f'${volume:,.0f}'
+        tooltip=f"首次报警 {clock(row['first_alert']*1000)} · 到期 {clock(row['expires_at']*1000)} · 1h成交额更新 {clock(row['volume_observed']*1000)}"
+        body.append(f'<tr><td>{index}</td><td>'+gmgn_token_preview(row['token'],tooltip,compact=True)+f'</td><td>{label}</td></tr>')
+    content=('<table class="gmgn-hour-table"><thead><tr><th>#</th><th>报警代币</th><th>1h成交额</th></tr></thead><tbody>'+''.join(body)+'</tbody></table>') if body else '<div class="gmgn-empty">'+('正在更新小时成交额' if ranking['total'] else '近10日暂无报警代币')+'</div>'
+    return '<section class="gmgn-card gmgn-hourly" data-gmgn-kind="tracking"><div class="gmgn-head"><span>10日报警榜</span><small>1h成交额 ↓ · 前10</small></div><div class="gmgn-hour-scroll">'+content+'</div></section>'
 
 
 def gmgn_combined_card(now=None):
     now=time.time() if now is None else now
+    ranking=gmgn.tracking.ranking_snapshot(now)
     snapshot=store.get('gmgn_market',{})
-    leaders=''.join(gmgn_card(now,kind,snapshot,show_status=False) for kind in ('hot','volume'))
-    status=snapshot.get('status','正在连接')
-    if not gmgn.configuration()['enabled']: status='已暂停'
-    elif status in ('监控中','正在扫描四链'):
-        status='SOL / BSC / BASE / ROB' if 0<=now-snapshot.get('last_success',0)<=60 else '数据延迟'
-    elif '限频' in status: status='限频等待恢复'
-    if any(v.get('capped') for v in snapshot.get('chains',{}).values()): status+=' · 榜单上限'
-    return ('<section class="gmgn-panel"><div class="rank-title"><h2>GMGN 监控</h2><span title="详情见设置与调试">'+html.escape(status)+'</span></div>'
-            '<div class="gmgn-combined"><div class="gmgn-leaders">'+leaders+'</div>'+gmgn_alarm_card()+'</div></section>')
+    status=''
+    if not gmgn.configuration()['enabled']:status='已暂停'
+    elif not ranking['complete']:status=f"小时数据 {ranking['fresh']}/{ranking['total']}"
+    elif snapshot.get('retry_at',0)>now:status='接口重试中'
+    return ('<section class="gmgn-panel"><div class="rank-title"><h2>GMGN 监控</h2><span title="首次报警后10日内跟踪；北京时间每天最多一次；过期小时数据不入榜">'+html.escape(status)+'</span></div>'
+            '<div class="gmgn-combined">'+gmgn_tracking_card(now)+gmgn_alarm_card()+'</div></section>')
 
 
 def ranking_card(rows,title,kind):

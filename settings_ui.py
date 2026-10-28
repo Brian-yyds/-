@@ -31,16 +31,13 @@ def rules():
         people=b.number_input('今日毕业：聪明钱 + KOL 人数大于',min_value=0,max_value=100000,value=int(gc['people']))
         graduate=a.number_input('今日毕业：5分钟成交额大于 USD',min_value=1000.,value=float(gc['graduate_volume']),step=50000.)
         other=b.number_input('非发射台：5分钟成交额大于 USD',min_value=1000.,value=float(gc['other_volume']),step=100000.)
-        days=a.number_input('成交榜首：创建不超过天数',min_value=1,max_value=3650,value=int(gc['leader_days']))
-        cap=b.number_input('成交榜首：市值上限 USD',min_value=1.,max_value=1e12,value=float(gc['leader_cap']),step=1000000.)
         poll=st.number_input('每轮扫描后的最短间隔（秒）',min_value=15,max_value=3600,value=int(gc['poll_seconds']),step=5)
-        st.caption('“大于”不包含等于。毕业按北京时间当天；两类警报都要求 KOL 超过阈值。成交榜首的天数、市值过滤不改变警报规则。')
-        st.caption('GMGN警报排除币股/股票及ETF代币：按发行方合约目录、证券平台标记及发行方名称识别；不按代币简称或整条链屏蔽。热搜、成交榜首和币安采集仍按原范围。')
-        st.caption('热搜按你在GMGN页面的排序：SOL / BSC / Base / ROB 四链热搜名单，5分钟成交额降序第一。不受成交榜首或警报筛选影响。')
-        st.caption('警报持续命中只记录一次；连续观测5分钟不满足条件后才重新触发。右侧展示最近3条历史警报。')
+        st.caption('“大于”不包含等于。首次毕业警报要求北京时间当天；已报警毕业代币10日内复报沿用成交额和人数条件，不再要求今日毕业。两类都要求KOL超过阈值，排除币股/ETF。')
+        st.caption('同链同CA按北京时间每天最多报警一次；持续超阈值不重复报，成交额连续观测5分钟回落至阈值内后再突破才可复报。人数波动不重置成交额去重。重启与确认不重置去重。')
+        st.caption('首次报警起10×24小时内跟踪，重复报警不续期，到期停止该轮跟踪并移出榜单。按真实近1小时美元成交额取前10；缺失/过期数据不伪造零成交。')
         if st.form_submit_button('保存 GMGN 规则',type='primary'):
             store.put('gmgn_config',gc|dict(enabled=enabled,kol_count=kol,people=people,graduate_volume=graduate,
-                other_volume=other,leader_days=days,leader_cap=cap,poll_seconds=poll))
+                other_volume=other,poll_seconds=poll))
             st.success('已保存，下一轮扫描生效。')
     gmgn_acknowledgement()
 
