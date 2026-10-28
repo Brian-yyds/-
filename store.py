@@ -8,12 +8,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 USER = ROOT / "user_data"
 DB = USER / "workbench.sqlite"
+RANK_WINDOW_MINUTES = 240
+# Two complete ranking windows plus a small startup/clock margin. Keeping this
+# below 500 retains the same Binance request weight as the previous 125 bars.
+MINUTE_SEED_LIMIT = 2 * RANK_WINDOW_MINUTES + 19
+LIVE_HISTORY_SECONDS = (2 * RANK_WINDOW_MINUTES + 60) * 60
+PRICE_HISTORY_SECONDS = (RANK_WINDOW_MINUTES + 20) * 60
+OI_SEED_LIMIT = RANK_WINDOW_MINUTES // 5 + 2
 DEFAULTS = {
     "watchlist": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT",
                   "LINKUSDT", "ADAUSDT", "AVAXUSDT", "SUIUSDT"],
     "move15m_pct": 1.5, "volume_ratio": 3.0, "funding_abs_bps": 10.0,
     "cooldown_minutes": 15,
-    "window_minutes": 60, "up_pct": 1.5, "down_pct": 1.5,
+    "window_minutes": RANK_WINDOW_MINUTES, "up_pct": 1.5, "down_pct": 1.5,
     "oi_up_pct": 3.0, "oi_down_pct": 3.0, "quote_ratio": 2.0,
     "min_quote": 0.0, "rule_mode": "任一条件", "priority": [], "overrides": {},
     "spike_up_pct": 10.0, "spike_down_pct": 10.0,
@@ -26,6 +33,8 @@ DEFAULTS = {
     "radar_priority_only": False, "depth_band_bps": 10.0,
     "sweep_quote": 10000.0,
     "market_excluded": ["BTCUSDT"],
+    "include_stocks": True,
+    "top_symbols": ["BTCUSDT", "ETHUSDT", "SOXLUSDT"],
 }
 
 
@@ -66,7 +75,20 @@ def put(key, value):
 
 
 def settings():
-    return DEFAULTS | get("settings", {}) | {"window_minutes": 60}
+    cfg=DEFAULTS | get("settings", {}) | {"window_minutes": RANK_WINDOW_MINUTES}
+    cfg['priority']=list(dict.fromkeys(cfg['priority']+cfg['top_symbols']))
+    cfg['watchlist']=list(dict.fromkeys(cfg['top_symbols']+cfg['watchlist']))
+    return cfg
+
+
+def filter_stock_symbols(symbols, cfg=None, info=None):
+    """Keep saved selections intact while disabling stocks throughout monitoring."""
+    cfg=settings() if cfg is None else cfg
+    if cfg.get('include_stocks',True):
+        return list(symbols)
+    info=get('exchange_info',{}) if info is None else info
+    stocks=set(info.get('stock_symbols',[]))
+    return [s for s in symbols if s not in stocks]
 
 
 def record_alert(symbol, kind, value, active, message, cooldown, now=None):
@@ -102,14 +124,25 @@ def save_minutes(symbol, rows):
             [(symbol,int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[7]),int(r[6] < time.time()*1000),time.time()) for r in rows])
 
 
-def live_inputs(symbols, now=None):
+def live_inputs(symbols, now=None, *, oi_window_minutes=None, include_oi=True):
     now = time.time() if now is None else now
     if not symbols:
         return {}, {}
     marks = ",".join("?" for _ in symbols)
-    cutoff = int((now - 8000) * 1000)
+    cutoff = int((now - LIVE_HISTORY_SECONDS) * 1000)
     with connect() as con:
-        oi = con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND t>=? ORDER BY t", [*symbols,cutoff]).fetchall()
+        oi=[]
+        if include_oi:
+            if oi_window_minutes is None:
+                oi = con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND t>=? ORDER BY t", [*symbols,cutoff]).fetchall()
+            else:
+                # OI rankings need a fresh current sample and candidates around
+                # its 4h baseline, not every intermediate sample. Include the
+                # largest allowed current age (180s) + historical tolerance (330s).
+                current=int(now*1000)
+                target=current-oi_window_minutes*60000
+                oi=con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND (t BETWEEN ? AND ? OR t BETWEEN ? AND ?) ORDER BY t",
+                               [*symbols,current-180000,current,target-510000,target]).fetchall()
         bars = con.execute(f"SELECT symbol,t,o,h,l,c,q,closed,seen FROM minute_candles WHERE symbol IN ({marks}) AND t>=? ORDER BY t", [*symbols,cutoff]).fetchall()
     oi_map, bar_map = {}, {}
     for symbol,*values in oi:
@@ -122,13 +155,13 @@ def live_inputs(symbols, now=None):
 def prune_live():
     with connect() as con:
         con.execute("DELETE FROM oi_samples WHERE t<?", (int((time.time()-172800)*1000),))
-        con.execute("DELETE FROM minute_candles WHERE t<?", (int((time.time()-10800)*1000),))
+        con.execute("DELETE FROM minute_candles WHERE t<?", (int((time.time()-LIVE_HISTORY_SECONDS)*1000),))
         con.execute("DELETE FROM taker_minutes WHERE t<?", (int((time.time()-10800)*1000),))
         con.execute("DELETE FROM depth_samples WHERE t<?", (time.time()-10800,))
-        con.execute("DELETE FROM price_samples WHERE bucket<?", (int((time.time()-8000)*1000)//5000,))
+        con.execute("DELETE FROM price_samples WHERE bucket<?", (int((time.time()-PRICE_HISTORY_SECONDS)*1000)//5000,))
 
 
-def price_baselines(events, window=60):
+def price_baselines(events, window=RANK_WINDOW_MINUTES):
     result={}
     with connect() as con:
         for symbol,event in events.items():

@@ -3,9 +3,34 @@ import time
 import math
 import store
 
-RULE_WINDOW_MINUTES=60
+RULE_WINDOW_MINUTES=store.RANK_WINDOW_MINUTES
 SPIKE_WINDOW_MS=15*60*1000
 SPIKE_THRESHOLD_PCT=10.0
+
+
+def focus_quotes(symbols, now=None):
+    """Same rolling four-hour baseline as the rankings, including excluded BTC."""
+    now=time.time() if now is None else now
+    ticks=store.get('live_market',{}).get('tickers',{})
+    events={s:ticks[s]['event_time'] for s in symbols if ticks.get(s,{}).get('event_time')}
+    baselines=store.price_baselines(events,RULE_WINDOW_MINUTES)
+    _,bars=store.live_inputs(symbols,now,include_oi=False)
+    result={}
+    for symbol in symbols:
+        tick=ticks.get(symbol,{})
+        price=tick.get('price')
+        event=tick.get('event_time',0)
+        fresh=isinstance(price,(int,float)) and math.isfinite(price) and price>0 and 0<=now*1000-event<=20000
+        base=baselines.get(symbol)
+        basis='实时价格采样'
+        if base is None:
+            target=(event-RULE_WINDOW_MINUTES*60000)//60000*60000
+            candle=next((b for b in bars.get(symbol,[]) if b[0]==target),None)
+            base=(candle[0],candle[1]) if candle else None
+            basis='4小时前所在分钟开盘价'
+        change=(price/base[1]-1)*100 if fresh and base and base[1]>0 else None
+        result[symbol]=dict(price=price,event_time=event,fresh=fresh,change=change,basis=basis)
+    return result
 
 
 def spike_metrics(observations,bars,price,event_time):
@@ -106,7 +131,13 @@ def evaluate(row, rule):
 def market_symbols(cfg=None):
     cfg=store.settings() if cfg is None else cfg
     info=store.get('exchange_info',{})
-    return [s for s in info.get('alt_symbols',info.get('symbols',[])) if s not in cfg.get('market_excluded',['BTCUSDT'])]
+    symbols=store.filter_stock_symbols(info.get('market_symbols',info.get('alt_symbols',info.get('symbols',[]))),cfg,info)
+    return [s for s in symbols if s not in cfg.get('market_excluded',['BTCUSDT'])]
+
+
+def monitored_spike_alerts(records,cfg=None):
+    allowed=set(store.filter_stock_symbols([r[2] for r in records],cfg))
+    return [r for r in records if r[2] in allowed]
 
 
 def build_rows(cfg=None, now=None, scope='focus'):
@@ -114,15 +145,18 @@ def build_rows(cfg=None, now=None, scope='focus'):
     now = time.time() if now is None else now
     snapshot = store.get("live_market", {})
     ticks = snapshot.get("tickers", {})
-    symbols=market_symbols(cfg) if scope=='market' else cfg['watchlist']
-    oi_map,bars_map = store.live_inputs(symbols, now)
-    baselines=store.price_baselines({s:ticks.get(s,{}).get('event_time',int(now*1000)) for s in symbols})
+    info=store.get('exchange_info',{})
+    stocks = set(info.get('stock_symbols',[]))
+    commodities = set(info.get('commodity_symbols',[]))
+    symbols=market_symbols(cfg) if scope=='market' else store.filter_stock_symbols(cfg['watchlist'],cfg)
+    oi_map,bars_map = store.live_inputs(symbols, now,oi_window_minutes=cfg['window_minutes'])
+    baselines=store.price_baselines({s:ticks.get(s,{}).get('event_time',int(now*1000)) for s in symbols},RULE_WINDOW_MINUTES)
     rows = []
     for symbol in symbols:
         tick = ticks.get(symbol, {})
         price = tick.get("price")
         fresh = bool(price and 0 <= now*1000-tick.get("event_time",0) <= (90000 if scope=='market' else 20000))
-        row = {"symbol":symbol,"priority":symbol in cfg["priority"],"price":price,
+        row = {"symbol":symbol,"asset_type":'stock' if symbol in stocks else 'commodity' if symbol in commodities else 'crypto',"priority":symbol in cfg["priority"],"price":price,
                "price_fresh":fresh,"price_time":tick.get("event_time"),
                "change24h":tick.get("change24h"),"quote24h":tick.get("quote24h"),
                "mark":tick.get("mark",price)}
@@ -133,7 +167,7 @@ def build_rows(cfg=None, now=None, scope='focus'):
             target=tick.get('event_time',int(now*1000))-cfg['window_minutes']*60000
             baseline=next((b for b in bars_map.get(symbol,[]) if b[0]==target//60000*60000),None)
             base=(baseline[0],baseline[1]) if baseline else None
-            row['price_basis']='1小时前所在分钟开盘价' if base else '历史数据待补齐'
+            row['price_basis']='4小时前所在分钟开盘价' if base else '历史数据待补齐'
         else: row['price_basis']='实时价格采样（5秒桶）'
         row['base_time'],row['base_price']=base if base else (None,None)
         row['price_span']=(tick['event_time']-base[0])/60000 if base and fresh else None

@@ -88,6 +88,9 @@ def start(no_browser=False):
     try:
         cmds = {
             "collector": [sys.executable, str(ROOT / "live_collector.py")],
+            "gmgn": [sys.executable, str(ROOT / "gmgn_monitor.py")],
+            "volume": [sys.executable, str(ROOT / "volume_monitor.py")],
+            "export": [sys.executable, str(ROOT / "export_worker.py")],
             "workbench": [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
                           "--server.address", "127.0.0.1", "--server.port", "8501",
                           "--server.headless", "true", "--browser.gatherUsageStats", "false"],

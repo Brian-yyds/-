@@ -30,7 +30,7 @@ def seed_market(now):
     with store.connect() as con:
         for s in symbols:
             con.executemany('INSERT INTO minute_candles VALUES (?,?,?,?,?,?,?,?,?)',
-                [(s,t,100.,100.,100.,100.,1000.,int(t<current),now/1000) for t in range(current-124*60000,current+1,60000)])
+                [(s,t,100.,100.,100.,100.,1000.,int(t<current),now/1000) for t in range(current-498*60000,current+1,60000)])
     return store.DEFAULTS|{'watchlist':['FOCUSUSDT']}
 
 
@@ -46,21 +46,22 @@ def test_full_market_ranking_includes_altcoins_outside_focus_pool(isolated):
     assert len(m.build_rows(cfg,now/1000))==1
 
 
-def test_hour_reference_is_not_the_59_minute_open(isolated):
+def test_four_hour_reference_is_not_the_239_minute_or_one_hour_open(isolated):
     now=180_030_000
     cfg=seed_market(now)
     current=now//60000*60000
     with store.connect() as con:
-        con.execute('UPDATE minute_candles SET o=110 WHERE symbol=? AND t=?',('PUMPUSDT',current-59*60000))
+        con.execute('UPDATE minute_candles SET o=110 WHERE symbol=? AND t IN (?,?)',('PUMPUSDT',current-239*60000,current-60*60000))
     r=next(r for r in m.build_rows(cfg,now/1000,scope='market') if r['symbol']=='PUMPUSDT')
     assert r['price_change']==pytest.approx(20)
-    assert r['base_price']==100 and r['price_span']==60.5
+    assert r['base_price']==100 and r['price_span']==240.5
+    assert r['quote']==240000  # Four hours of actual USDT volume, not one hour.
 
 
 def test_live_price_reference_takes_precedence_without_future_leakage(isolated):
     now=180_030_000
     cfg=seed_market(now)
-    target=now-3600000
+    target=now-4*3600000
     with store.connect() as con:
         con.executemany('INSERT INTO price_samples VALUES (?,?,?,?)',
             [('PUMPUSDT',(target-6000)//5000,target-6000,110.),('PUMPUSDT',(target+1000)//5000,target+1000,115.)])
@@ -70,7 +71,7 @@ def test_live_price_reference_takes_precedence_without_future_leakage(isolated):
     assert '实时' in r['price_basis']
 
 
-def test_new_coin_without_hour_history_is_not_assigned_zero(isolated):
+def test_new_coin_without_four_hour_history_is_not_assigned_zero(isolated):
     now=180_030_000
     cfg=seed_market(now)
     with store.connect() as con:
@@ -85,7 +86,21 @@ def test_all_market_oi_sampling_age_does_not_relax_focus_age(isolated):
     now=180_030_000
     cfg=seed_market(now)
     for symbol in ['PUMPUSDT','FOCUSUSDT']:
-        store.save_oi(symbol,[(now-3700000,100,'live'),(now-100000,110,'live')])
+        store.save_oi(symbol,[(now-14500000,100,'live'),(now-100000,110,'live')])
     rows=m.build_rows(cfg,now/1000,scope='market')
     assert next(r for r in rows if r['symbol']=='PUMPUSDT')['oi_change']==pytest.approx(10)
     assert next(r for r in rows if r['symbol']=='FOCUSUSDT')['oi_change'] is None
+
+
+def test_oi_ranking_read_preserves_late_current_and_historical_baseline_tolerance(isolated):
+    now=180030000
+    latest=now-180000
+    store.save_oi('ALTUSDT',[(latest,120,'live'),
+        (latest-4*3600000-330000,100,'history5m'),(now-2*3600000,50,'live'),(now+1000,999,'live')])
+    complete,_=store.live_inputs(['ALTUSDT'],now/1000)
+    selected,_=store.live_inputs(['ALTUSDT'],now/1000,oi_window_minutes=240)
+    expected=m.oi_metrics(complete['ALTUSDT'],now,240,max_age_ms=180000)
+    actual=m.oi_metrics(selected['ALTUSDT'],now,240,max_age_ms=180000)
+    assert actual==expected
+    assert actual['oi_change']==pytest.approx(20)
+    assert actual['oi_basis']=='5m历史快照'

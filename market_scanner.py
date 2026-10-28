@@ -6,6 +6,26 @@ import store
 import monitoring
 from collector import PublicClient
 
+STOCK_UNDERLYING_TYPES = frozenset({'EQUITY', 'KR_EQUITY', 'HK_EQUITY', 'CN_EQUITY', 'PREMARKET'})
+
+
+def stock_contracts(info):
+    return sorted(s['symbol'] for s in info['symbols']
+                  if s.get('contractType') in ('PERPETUAL','TRADIFI_PERPETUAL') and s.get('status') == 'TRADING'
+                  and s.get('quoteAsset') == 'USDT' and s.get('marginAsset') == 'USDT'
+                  and s.get('underlyingType') in STOCK_UNDERLYING_TYPES)
+
+
+def commodity_contracts(info):
+    return sorted(s['symbol'] for s in info['symbols']
+                  if s.get('contractType') in ('PERPETUAL','TRADIFI_PERPETUAL') and s.get('status')=='TRADING'
+                  and s.get('quoteAsset')=='USDT' and s.get('marginAsset')=='USDT'
+                  and s.get('underlyingType')=='COMMODITY')
+
+
+def monitored_contracts(info):
+    return sorted(set(crypto_contracts(info)) | set(stock_contracts(info)) | set(commodity_contracts(info)))
+
 
 def crypto_contracts(info):
     return sorted(s['symbol'] for s in info['symbols']
@@ -28,7 +48,9 @@ class MarketScanner:
         self.startup_until=time.time()+20
         current=int(time.time()*1000)//60000*60000
         with store.connect() as con:
-            ready=con.execute('SELECT symbol FROM minute_candles WHERE t BETWEEN ? AND ? GROUP BY symbol HAVING COUNT(*)=121',(current-120*60000,current)).fetchall()
+            count=2*store.RANK_WINDOW_MINUTES+1
+            ready=con.execute('SELECT symbol FROM minute_candles WHERE t BETWEEN ? AND ? GROUP BY symbol HAVING COUNT(*)=?',
+                              (current-(count-1)*60000,current,count)).fetchall()
             recent=con.execute("SELECT symbol,MAX(t) FROM oi_samples WHERE source='live' GROUP BY symbol").fetchall()
         self.monitor.seeded.update({s:time.time() for (s,) in ready})
         self.oi_due.update({s:t/1000 for s,t in recent})
@@ -49,18 +71,19 @@ class MarketScanner:
             self.monitor.blocked_until=max(self.monitor.blocked_until,client.blocked_until)
 
     def sample(self,symbol):
+        if symbol in self.monitor.stock_symbols and not store.settings().get('include_stocks',False): return
         if time.time()<self.retry.get(symbol,0): return
         try:
             m=self.monitor
-            # Complete two 1h volume windows, and historical emergency extrema.
+            # Complete two 4h volume windows and a genuine four-hour baseline.
             seeded_age=time.time()-m.seeded.get(symbol,0)
             stale_stream=time.time()>self.startup_until and time.time()-m.ws_kline_last.get(symbol,0)>25
             if seeded_age>600 or stale_stream and seeded_age>60:
-                rows=self.get('/fapi/v1/klines',2,symbol=symbol,interval='1m',limit=125)
+                rows=self.get('/fapi/v1/klines',2,symbol=symbol,interval='1m',limit=store.MINUTE_SEED_LIMIT)
                 store.save_minutes(symbol,rows)
                 with m.lock:
                     cache=m.spike_bars.setdefault(symbol,{})
-                    for r in rows:
+                    for r in rows[-125:]:
                         if int(r[6])<time.time()*1000:
                             cache[int(r[0])]=(int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[7]),1,time.time())
                 m.seeded[symbol]=time.time()
@@ -68,10 +91,11 @@ class MarketScanner:
                 raw=self.get('/fapi/v1/openInterest',1,symbol=symbol)
                 store.save_oi(symbol,[(raw['time'],raw['openInterest'],'live')])
                 self.oi_due[symbol]=time.time()
-            if time.time()-store.get('oi_seed:'+symbol,0)>300:
-                history=self.get('/futures/data/openInterestHist',0,symbol=symbol,period='5m',limit=26)
+            seed_key=f'oi_seed:{store.RANK_WINDOW_MINUTES}m:{symbol}'
+            if time.time()-store.get(seed_key,0)>300:
+                history=self.get('/futures/data/openInterestHist',0,symbol=symbol,period='5m',limit=store.OI_SEED_LIMIT)
                 store.save_oi(symbol,[(h['timestamp'],h['sumOpenInterest'],'history5m') for h in history])
-                store.put('oi_seed:'+symbol,time.time())
+                store.put(seed_key,time.time())
             self.errors.pop(symbol,None)
         except Exception as exc:
             self.errors[symbol]=str(exc)[:240]
@@ -97,5 +121,5 @@ class MarketScanner:
         store.put('market_health',{'heartbeat':time.time(),'total':len(symbols),
             'history_seeded':sum(s in self.monitor.seeded for s in symbols),
             'round_seconds':round(time.time()-started,1), 'errors':dict(list(self.errors.items())[:12]),
-            'scope':'币安全市场USDT加密资产永续，默认排除BTC及指数',
+            'scope':'币安USDT加密资产、币股/ETF及大宗永续，默认排除BTC及指数',
             'sampling':'全市场OI约60–180秒，自选OI约10秒；价格/K线实时推送，OI仅排行'})

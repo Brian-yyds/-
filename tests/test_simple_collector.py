@@ -36,6 +36,7 @@ def test_main_cycle_only_creates_spike_alarms_even_if_legacy_options_enabled(iso
     stamp=int(time.time()*1000)-1000
     m.valid={'XUSDT'}
     m.alt_valid={'XUSDT'}
+    m.market_valid={'XUSDT'}
     m.spike_prices['XUSDT'].append((stamp-60000,100.))
     m.ticks={'XUSDT':{'price':110.,'event_time':stamp}}
     m.universe=lambda:None

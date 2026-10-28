@@ -42,3 +42,11 @@ urllib3==2.8.0
 uvicorn==0.54.0
 watchdog==6.0.0
 websockets==17.2
+# Collector SFTP dependencies verified with Python 3.12, 2026-10-28.
+bcrypt==5.0.0
+cffi==2.0.0
+cryptography==50.0.2
+invoke==3.0.3
+paramiko==5.1.0
+pycparser==3.0
+pynacl==1.6.2

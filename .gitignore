@@ -1,12 +1,17 @@
 .venv/
 __pycache__/
 .pytest_cache/
-user_data/config.local.json
-user_data/*.sqlite*
-user_data/*.log
-user_data/data/
-user_data/backtest_results/
-user_data/reports/
-user_data/runtime.json
-user_data/requirements.lock.txt
-user_data/api_keys.*
+# All generated data, settings and identities stay local. Only strategy source ships.
+user_data/*
+!user_data/strategies/
+user_data/strategies/*
+!user_data/strategies/*.py
+.git/
+.env
+.env.*
+*.dpapi
+*.sqlite*
+*.log
+*.pem
+id_ed25519*
+*.zip

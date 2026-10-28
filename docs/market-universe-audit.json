@@ -1,0 +1,92 @@
+{
+  "checked_at_utc": "2026-10-23T08:16:06.130277+00:00",
+  "usdm": {
+    "total_records": 931,
+    "statuses": {
+      "TRADING": 796,
+      "SETTLING": 134,
+      "PENDING_TRADING": 1
+    },
+    "active": 796,
+    "active_perpetual": 567,
+    "active_perpetual_by_quote": {
+      "USDT": 524,
+      "BTC": 1,
+      "USDC": 38,
+      "USD1": 2,
+      "U": 2
+    },
+    "active_usdt_perpetual": 524,
+    "selected_crypto": 522,
+    "monitor_after_exclusions": 521,
+    "rejected_by_current_filter": 2,
+    "rejected_types": {
+      "INDEX": 2
+    },
+    "rejected_subtypes": {
+      "['Index', 'Crypto']": 2
+    },
+    "rejected_examples": [
+      {
+        "symbol": "BTCDOMUSDT",
+        "underlyingType": "INDEX",
+        "underlyingSubType": [
+          "Index",
+          "Crypto"
+        ]
+      },
+      {
+        "symbol": "ALLUSDT",
+        "underlyingType": "INDEX",
+        "underlyingSubType": [
+          "Index",
+          "Crypto"
+        ]
+      }
+    ],
+    "active_underlying_types": {
+      "COIN": 569,
+      "INDEX": 2,
+      "COMMODITY": 8,
+      "EQUITY": 187,
+      "PREMARKET": 4,
+      "KR_EQUITY": 8,
+      "HK_EQUITY": 15,
+      "CN_EQUITY": 2,
+      "FX": 1
+    }
+  },
+  "coinm": {
+    "total_records": 30,
+    "statuses": {
+      "TRADING": 30
+    },
+    "active": 30,
+    "active_perpetual": 20,
+    "active_perpetual_by_quote": {
+      "USD": 20
+    },
+    "active_usdt_perpetual": 0,
+    "selected_crypto": 0,
+    "monitor_after_exclusions": 0,
+    "rejected_by_current_filter": 0,
+    "rejected_types": {},
+    "rejected_subtypes": {},
+    "rejected_examples": [],
+    "active_underlying_types": {
+      "COIN": 30
+    }
+  },
+  "local": {
+    "fetched_at": 1792741349.6326654,
+    "all_valid": 524,
+    "crypto_valid": 522,
+    "monitor_exclusions": [
+      "BTCUSDT"
+    ],
+    "heartbeat": 1792743360.2008593,
+    "market_symbols": 521,
+    "ws_error": null,
+    "errors": []
+  }
+}

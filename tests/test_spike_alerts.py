@@ -88,7 +88,9 @@ def test_opposite_direction_can_alert_during_same_episode(tmp_path,monkeypatch):
     assert {r[3] for r in store.spike_alerts()}=={'急涨','急跌'}
 
 
-def test_hourly_window_fixed_even_when_old_setting_exists(tmp_path,monkeypatch):
+@pytest.mark.parametrize('old_window',[15,60])
+def test_four_hour_window_fixed_even_when_old_setting_exists(tmp_path,monkeypatch,old_window):
     monkeypatch.setattr(store,'DB',tmp_path/'settings.sqlite')
-    store.put('settings',{'window_minutes':15})
-    assert store.settings()['window_minutes']==60
+    store.put('settings',{'window_minutes':old_window})
+    assert store.settings()['window_minutes']==240
+    assert m.SPIKE_WINDOW_MS==15*60000

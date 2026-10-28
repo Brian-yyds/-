@@ -9,7 +9,7 @@ from websockets.sync.client import connect
 import store
 import monitoring
 from collector import PublicClient
-from market_scanner import crypto_contracts,MarketScanner
+from market_scanner import crypto_contracts,stock_contracts,commodity_contracts,MarketScanner
 
 
 class Monitor:
@@ -18,7 +18,8 @@ class Monitor:
         self.local = threading.local()
         self.lock = threading.Lock()
         self.valid = set()
-        self.alt_valid = set()
+        self.market_valid = set()
+        self.stock_symbols = set(store.get('exchange_info',{}).get('stock_symbols',[]))
         self.ticks = {}
         self.seeded = {}
         self.blocked_until = 0
@@ -40,6 +41,8 @@ class Monitor:
             if time.time()-self.spike_config_time>=3:
                 self.spike_config=store.settings()
                 self.spike_config_time=time.time()
+            if not self.spike_config.get('include_stocks',False) and symbol in self.stock_symbols:
+                return
             observations=self.spike_prices[symbol]
             if observations and event_time<=observations[-1][0]:
                 return
@@ -68,8 +71,14 @@ class Monitor:
         info = self.client.get("/fapi/v1/exchangeInfo")
         self.valid = {s["symbol"] for s in info["symbols"] if s["contractType"]=="PERPETUAL"
                       and s["quoteAsset"]=="USDT" and s["marginAsset"]=="USDT" and s["status"]=="TRADING"}
-        self.alt_valid=set(crypto_contracts(info))
-        store.put("exchange_info", {"fetched_at":time.time(),"symbols":sorted(self.valid),'alt_symbols':sorted(self.alt_valid)})
+        crypto = set(crypto_contracts(info))
+        stocks = set(stock_contracts(info))
+        commodities = set(commodity_contracts(info))
+        self.stock_symbols = stocks
+        self.valid |= stocks | commodities
+        self.market_valid = crypto | stocks | commodities
+        store.put("exchange_info", {"fetched_at":time.time(),"symbols":sorted(self.valid),
+            'alt_symbols':sorted(crypto),'stock_symbols':sorted(stocks),'commodity_symbols':sorted(commodities),'market_symbols':sorted(self.market_valid)})
 
     def quotes(self):
         raw = self.client.get("/fapi/v1/ticker/24hr")
@@ -85,8 +94,9 @@ class Monitor:
 
     def stream(self):
         while True:
-            symbols = tuple(s for s in store.settings()["watchlist"][:50] if s in self.valid)
-            market=tuple(sorted(self.valid))
+            cfg=store.settings()
+            symbols = tuple(s for s in store.filter_stock_symbols(cfg['watchlist'],cfg)[:50] if s in self.valid)
+            market=tuple(sorted(store.filter_stock_symbols(self.valid,cfg)))
             streams = ["!ticker@arr", *[s.lower()+'@kline_1m' for s in market]]
             url = "wss://fstream.binance.com/market/stream?streams="+"/".join(streams)
             pending = {}
@@ -99,8 +109,9 @@ class Monitor:
                     while True:
                         now = time.time()
                         if now-last_check>3:
-                            current = tuple(s for s in store.settings()["watchlist"][:50] if s in self.valid)
-                            if current != symbols or tuple(sorted(self.valid))!=market: break
+                            current_cfg=store.settings()
+                            current = tuple(s for s in store.filter_stock_symbols(current_cfg['watchlist'],current_cfg)[:50] if s in self.valid)
+                            if current != symbols or tuple(sorted(store.filter_stock_symbols(self.valid,current_cfg)))!=market: break
                             last_check = now
                         try:
                             packet = json.loads(ws.recv(timeout=1))
@@ -116,7 +127,7 @@ class Monitor:
                                                 "quote24h":float(t["q"]),"event_time":int(t["E"])}
                                             stamp=int(t['E'])
                                             price_pending.setdefault((symbol,stamp//5000),(symbol,stamp//5000,stamp,float(t['c'])))
-                                            if symbol in self.alt_valid and symbol not in self.spike_config.get('market_excluded',['BTCUSDT']):
+                                            if symbol in self.market_valid and symbol not in self.spike_config.get('market_excluded',['BTCUSDT']):
                                                 spike_ticks.append((symbol,float(t['c']),int(t['E'])))
                                 for spike_tick in spike_ticks:
                                     self.inspect_spike(*spike_tick)
@@ -128,7 +139,7 @@ class Monitor:
                                     cache=self.spike_bars.setdefault(data['s'],{})
                                     cache[int(k['t'])]=pending[(data['s'],k['t'])][1:]
                                     self.spike_bars[data['s']]={t:r for t,r in cache.items() if t>=int(k['t'])-7200000}
-                                if data['s'] in symbols and data['s'] not in self.spike_config.get('market_excluded',['BTCUSDT']):
+                                if data['s'] in self.market_valid and data['s'] not in self.spike_config.get('market_excluded',['BTCUSDT']):
                                     self.inspect_spike(data['s'],float(k['c']),int(data['E']))
                                 self.ws_kline_last[data["s"]] = time.time()
                         except TimeoutError:
@@ -158,20 +169,21 @@ class Monitor:
         client=self.local.client
         warnings=[]
         try:
-            # Seed enough 1m bars for both the current and previous 60m windows.
+            # Seed both rolling four-hour volume windows and the price baseline.
             if time.time()-self.seeded.get(symbol,0)>120 or time.time()-self.ws_kline_last.get(symbol,0)>15:
-                minute_rows=client.get("/fapi/v1/klines",symbol=symbol,interval="1m",limit=125)
+                minute_rows=client.get("/fapi/v1/klines",symbol=symbol,interval="1m",limit=store.MINUTE_SEED_LIMIT)
                 store.save_minutes(symbol,minute_rows)
                 with self.lock:
-                    self.spike_bars[symbol]={int(r[0]):(int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[7]),int(r[6]<time.time()*1000),time.time()) for r in minute_rows}
+                    self.spike_bars[symbol]={int(r[0]):(int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[7]),int(r[6]<time.time()*1000),time.time()) for r in minute_rows[-125:]}
                 self.seeded[symbol]=time.time()
             raw=client.get("/fapi/v1/openInterest",symbol=symbol)
             store.save_oi(symbol,[(raw["time"],raw["openInterest"],"live")])
-            if time.time()-store.get("oi_seed:"+symbol,0)>300:
+            seed_key=f'oi_seed:{store.RANK_WINDOW_MINUTES}m:{symbol}'
+            if time.time()-store.get(seed_key,0)>300:
                 try:
-                    history=client.get("/futures/data/openInterestHist",symbol=symbol,period="5m",limit=26)
+                    history=client.get("/futures/data/openInterestHist",symbol=symbol,period="5m",limit=store.OI_SEED_LIMIT)
                     store.save_oi(symbol,[(h["timestamp"],h["sumOpenInterest"],"history5m") for h in history])
-                    store.put("oi_seed:"+symbol,time.time())
+                    store.put(seed_key,time.time())
                 except Exception as exc:
                     warnings.append("OI历史基准："+str(exc))
             return warnings
@@ -197,7 +209,7 @@ class Monitor:
                         last_universe=time.time()
                     if time.time()-self.last_quotes>30 or time.time()-self.ws_last>15:
                         self.quotes()
-                    futures={pool.submit(self.sample,s):s for s in cfg["watchlist"][:50] if s in self.valid}
+                    futures={pool.submit(self.sample,s):s for s in store.filter_stock_symbols(cfg['watchlist'],cfg)[:50] if s in self.valid}
                     for future in as_completed(futures):
                         s=futures[future]
                         try:
@@ -205,10 +217,11 @@ class Monitor:
                         except Exception as exc:
                             errors.append(s+": "+str(exc))
                     cfg=store.settings()
+                    monitored=set(monitoring.market_symbols(cfg))
                     # If the stream is unavailable, evaluate with fresh REST
                     # quotes as a fallback. This may be delayed by the OI cycle.
                     with self.lock:
-                        spike_ticks=[(s,t['price'],t['event_time']) for s,t in self.ticks.items() if s in self.alt_valid and s not in cfg.get('market_excluded',['BTCUSDT'])]
+                        spike_ticks=[(s,t['price'],t['event_time']) for s,t in self.ticks.items() if s in monitored]
                     for spike_tick in spike_ticks:
                         self.inspect_spike(*spike_tick)
                     # Only <=15m price-spike episodes can create alerts.
@@ -219,7 +232,7 @@ class Monitor:
                 except Exception as exc:
                     errors.append(str(exc))
                     self.blocked_until=max(self.blocked_until,self.client.blocked_until)
-                store.put("monitor_health",{"heartbeat":time.time(),"errors":errors,"symbols":len(cfg["watchlist"]),'market_symbols':len(self.alt_valid-set(cfg.get('market_excluded',['BTCUSDT']))),
+                store.put("monitor_health",{"heartbeat":time.time(),"errors":errors,"symbols":len(store.filter_stock_symbols(cfg['watchlist'],cfg)),'market_symbols':len(monitoring.market_symbols(cfg)),
                     "cycle_seconds":time.time()-started,"blocked_until":self.blocked_until,'mode':'15m_price_alerts_only'})
                 print(json.dumps({"watching":len(cfg["watchlist"]),"errors":errors,"seconds":round(time.time()-started,2)},ensure_ascii=False),flush=True)
                 time.sleep(max(1,10-(time.time()-started),min(900,self.blocked_until-time.time())))
