@@ -8,7 +8,7 @@ import sftp_sync as sync
 
 def render():
     st.subheader('采集与定时上传')
-    st.caption('网站照常监控，同时整理标准 JSON。包含全市场行情、4小时榜单、重点、币安/GMGN警报、15日成交统计及数据时间；不包含密钥和本机数据库。')
+    st.caption('网站照常监控，同时整理标准 JSON。包含全市场行情、4小时榜单、重点、币安/GMGN警报、30日成交统计及数据时间；不包含密钥和本机数据库。')
     cfg = sync.configuration()
     show_status()
     with st.form('sftp_settings'):

@@ -91,12 +91,13 @@ def gmgn_data(context):
 
 @section('market_volume')
 def market_volume(context):
-    snapshot = store.get('market_volume_15d', {})
+    import volume_monitor
+    snapshot = store.get(volume_monitor.SNAPSHOT_KEY, {})
     days = []
     for day in snapshot.get('days', []):
         days.append(fields(day, 'start quote top10_quote') | {
             'top10': [fields(t, 'symbol quote') for t in day.get('top10', [])]})
-    return fields(snapshot, 'complete symbol_count range_start range_end includes_today timezone updated_at scan_started source scope') | {'days': days}
+    return fields(snapshot, 'complete window_days symbol_count range_start range_end includes_today timezone updated_at scan_started source scope') | {'days': days}
 
 
 @section('health')

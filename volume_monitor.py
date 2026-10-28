@@ -1,4 +1,4 @@
-"""Fifteen Beijing calendar days: crypto-market and daily top-ten turnover."""
+"""Thirty Beijing calendar days: crypto-market and daily top-ten turnover."""
 import math
 import threading
 import time
@@ -13,8 +13,9 @@ ZONE=timezone(timedelta(hours=8))
 HOUR=3600000
 DAY=24*HOUR
 PAUSE=300
-DAYS=15
-SNAPSHOT_KEY='market_volume_15d'
+DAYS=30
+MAX_KLINES=499
+SNAPSHOT_KEY='market_volume_30d'
 
 
 def window_start(now):
@@ -67,7 +68,7 @@ def aggregate(symbols,cache,start,now):
         leaders=[dict(symbol=symbol,quote=quote) for symbol,quote in ranked[:10]]
         days.append(dict(start=start+i*DAY,quote=math.fsum(values[i] for values in per_symbol.values()),
                          top10_quote=math.fsum(t['quote'] for t in leaders),top10=leaders))
-    return dict(complete=not missing,missing=missing,
+    return dict(complete=not missing,missing=missing,window_days=DAYS,
                 days=days,total=math.fsum(d['quote'] for d in days) if not missing else None,symbol_count=len(symbols),
                 range_start=start,range_end=int(now*1000),includes_today=True,timezone='Asia/Shanghai')
 
@@ -109,18 +110,31 @@ class Monitor:
         store.put('market_volume_health',dict(heartbeat=started,status='正在汇总',completed=0,total=len(symbols)))
 
         def sample(symbol):
-            now=time.time()
-            wanted=list(expected_hours(symbols[symbol],start,now))
+            wanted=list(expected_hours(symbols[symbol],start,started))
             if not wanted: return symbol,{}
-            missing=next((t for t in wanted if t not in cache.get(symbol,{})),wanted[-1])
-            first=min(missing,max(wanted[0],wanted[-1]-HOUR))
-            limit=min(499,max(2,(int(now*1000)//HOUR*HOUR-first)//HOUR+2))
-            raw=self.get('/fapi/v1/klines',symbol=symbol,interval='1h',startTime=first,limit=limit)
-            values=parse_rows(raw,start,time.time())
-            with store.connect() as con:
-                con.executemany('INSERT OR REPLACE INTO market_hourly_volume VALUES (?,?,?,?)',
-                                [(symbol,t,q,time.time()) for t,q in values.items()])
-            return symbol,values
+            # Backfill missing history, then refresh the current and previous
+            # hour. Split long ranges below 500 to retain the lower API weight.
+            needed=[t for t in wanted if t not in cache.get(symbol,{}) or t>=wanted[-1]-HOUR]
+            pages=[]
+            for stamp in needed:
+                if pages and stamp==pages[-1][-1]+HOUR and len(pages[-1])<MAX_KLINES:
+                    pages[-1].append(stamp)
+                else:
+                    pages.append([stamp])
+            result={}
+            for stamps in pages:
+                raw=self.get('/fapi/v1/klines',symbol=symbol,interval='1h',
+                             startTime=stamps[0],endTime=stamps[-1]+HOUR-1,limit=len(stamps))
+                values=parse_rows(raw,start,time.time())
+                # Save valid pages even if a later page fails. Missing hours
+                # are never replaced with zero and a partial total is not published.
+                with store.connect() as con:
+                    con.executemany('INSERT OR REPLACE INTO market_hourly_volume VALUES (?,?,?,?)',
+                                    [(symbol,t,q,time.time()) for t,q in values.items()])
+                if any(t not in values for t in stamps):
+                    raise ValueError('成交额历史分页未完整返回')
+                result.update(values)
+            return symbol,result
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures={pool.submit(sample,s):s for s in symbols}

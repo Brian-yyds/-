@@ -126,7 +126,7 @@ def diagnostics():
     now=time.time()
     labels=[('币安采集','monitor_health','heartbeat'),('币安全市场扫描','market_health','heartbeat'),
             ('币安实时流','stream_health','last_message'),('GMGN 四链扫描','gmgn_market','last_success'),
-            ('15日市场成交统计','market_volume_15d','updated_at')]
+            ('30日市场成交统计','market_volume_30d','updated_at')]
     for label,key,field in labels:
         snapshot=store.get(key,{})
         stamp=snapshot.get(field,0)

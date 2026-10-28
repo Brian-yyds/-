@@ -62,7 +62,7 @@ def seed_market():
     store.put('ai_config',dict(secret='MUST_NOT_EXPORT'))
     store.put('sync_config',config(password='MUST_NOT_EXPORT'))
     store.put('stream_health',dict(connected=True,last_message=NOW,error='MUST_NOT_EXPORT'))
-    store.put('market_volume_15d',dict(complete=True,days=[dict(start=123,quote=5,top10_quote=4,top10=[dict(symbol='ALTUSDT',quote=4)])]))
+    store.put('market_volume_30d',dict(complete=True,window_days=30,days=[dict(start=123+n*86400000,quote=5,top10_quote=4,top10=[dict(symbol='ALTUSDT',quote=4)]) for n in range(30)]))
 
 
 def test_export_uses_current_rules_keeps_asset_scope_and_omits_credentials(isolated):
@@ -80,6 +80,8 @@ def test_export_uses_current_rules_keeps_asset_scope_and_omits_credentials(isola
     assert packet['modules']['gmgn']['data']['watch_ranking']['total']==1
     assert 'hot' not in packet['modules']['gmgn']['data']
     assert packet['modules']['market_volume']['data']['days'][0]['top10_quote']==4
+    assert packet['modules']['market_volume']['data']['window_days']==30
+    assert len(packet['modules']['market_volume']['data']['days'])==30
     assert packet['events']['gmgn_alerts']['new'][0]['token']['volume']==300001
 
 

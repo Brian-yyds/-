@@ -22,10 +22,10 @@ def isolated(tmp_path,monkeypatch):
     monkeypatch.setattr(v.time,'time',lambda:NOW)
 
 
-def test_fifteen_beijing_days_includes_today():
+def test_thirty_beijing_days_includes_today():
     start=v.window_start(NOW)
-    assert datetime.fromtimestamp(start/1000,v.ZONE).isoformat()=='2026-10-13T00:00:00+08:00'
-    assert len(v.expected_hours(0,start,NOW))==14*24+14
+    assert datetime.fromtimestamp(start/1000,v.ZONE).isoformat()=='2026-09-28T00:00:00+08:00'
+    assert len(v.expected_hours(0,start,NOW))==29*24+14
     assert v.window_start(datetime(2026,10,28,0,tzinfo=v.ZONE).timestamp())==start+v.DAY
 
 
@@ -53,7 +53,7 @@ def test_new_listing_does_not_need_history_before_its_onboard_date():
     first=onboard//v.HOUR*v.HOUR
     result=v.aggregate({'NEWUSDT':onboard},{'NEWUSDT':{first:25}},start,NOW)
     assert result['complete'] and result['total']==25
-    assert [d['quote'] for d in result['days']]==[0]*14+[25]
+    assert [d['quote'] for d in result['days']]==[0]*29+[25]
 
 
 class Client:
@@ -68,7 +68,7 @@ class Client:
                     contract('INDEXUSDT',underlyingType='INDEX'),contract('OLDUSDT',status='SETTLING')]}
         assert path=='/fapi/v1/klines' and params['interval']=='1h'
         if self.fail and params['symbol']=='ALTUSDT': raise RuntimeError('offline')
-        start=params['startTime'];end=int(NOW*1000)//v.HOUR*v.HOUR
+        start=params['startTime'];end=min(params['endTime']//v.HOUR*v.HOUR,int(NOW*1000)//v.HOUR*v.HOUR)
         quote=(2 if params['symbol']=='BTCUSDT' else 3)*self.multiplier
         return [row(t,quote) for t in range(start,end+1,v.HOUR)][:params['limit']]
 
@@ -80,6 +80,9 @@ def test_cycle_includes_btc_excludes_stocks_and_updates_cache_without_double_cou
     hours=len(v.expected_hours(0,v.window_start(NOW),NOW))
     assert snapshot['complete'] and snapshot['symbol_count']==2
     assert snapshot['total']==hours*5
+    assert snapshot['window_days']==30 and len(snapshot['days'])==30
+    pages=[p for path,p in client.calls if path.endswith('klines')]
+    assert len(pages)==4 and all(1<=p['limit']<=499 for p in pages)
     assert {p['symbol'] for path,p in client.calls if path.endswith('klines')}=={'BTCUSDT','ALTUSDT'}
     client.calls=[];client.multiplier=2
     monitor.cycle()
@@ -92,7 +95,7 @@ def test_cycle_includes_btc_excludes_stocks_and_updates_cache_without_double_cou
     assert store.get('market_volume_health')['failed']==1
 
 
-def test_pair_has_fifteen_days_each_and_no_summary_block(isolated):
+def test_single_frame_has_thirty_paired_daily_values_and_no_summary_block(isolated):
     from monitor_ui import market_volume_card
     store.put('market_volume_health',dict(status='正在汇总',completed=10,total=520))
     loading=market_volume_card(NOW)
@@ -103,11 +106,34 @@ def test_pair_has_fifteen_days_each_and_no_summary_block(isolated):
     store.put('market_volume_health',dict(status='统计完成'))
     ready=market_volume_card(NOW)
     assert ready.count('class="volume-day')==30
-    assert ready.count('data-volume-kind=')==2
+    assert ready.count('class="market-volume')==1
+    assert ready.count('data-volume-kind="top10"')==30
+    assert ready.count('data-volume-kind="all"')==30
     assert 'volume-total' not in ready and 'volume-today' not in ready and 'volume-meta' not in ready
     assert '前10' in ready and '亿USDT' in ready
     assert 'data-market-volume="ready"' in ready
     assert 'data-market-volume="loading"' in market_volume_card(NOW+v.DAY)
+
+
+def test_history_page_gap_is_saved_but_never_published_as_complete(isolated):
+    client=Client();monitor=v.Monitor()
+    def truncated(path,**params):
+        result=client.get(path,**params)
+        if path.endswith('klines') and params['symbol']=='BTCUSDT' and params['startTime']==v.window_start(NOW):
+            return result[:-1]
+        return result
+    monitor.get=truncated
+    monitor.cycle()
+    assert not store.get(v.SNAPSHOT_KEY)
+    assert store.get('market_volume_health')['failed']==1
+    with store.connect() as con:
+        assert con.execute('SELECT COUNT(*) FROM market_hourly_volume WHERE symbol=?',('BTCUSDT',)).fetchone()[0]==498
+    client.calls=[];monitor.get=client.get
+    monitor.cycle()
+    assert store.get(v.SNAPSHOT_KEY)['complete']
+    btc=[p for path,p in client.calls if path.endswith('klines') and p['symbol']=='BTCUSDT']
+    assert btc[0]['startTime']==v.window_start(NOW)+498*v.HOUR
+    assert store.get(v.SNAPSHOT_KEY)['total']==len(v.expected_hours(0,v.window_start(NOW),NOW))*5
 
 
 def test_top_ten_are_selected_separately_each_day():

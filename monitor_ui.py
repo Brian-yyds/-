@@ -47,20 +47,19 @@ h1,h2,h3{letter-spacing:-.025em}
 .quick-price.is-delayed .quick-price-value strong{color:#9babbf}
 .overview-strip{max-width:1640px;margin-bottom:10px}.overview-strip .top-strip{margin:0 0 9px}
 .overview-strip .quick-prices{grid-template-columns:repeat(auto-fit,minmax(145px,210px));gap:9px}
-.volume-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
 .market-volume{padding:8px 10px;background:linear-gradient(115deg,#142438,#111c29);border:1px solid #355475;border-radius:9px;min-width:0;font-variant-numeric:tabular-nums}
 .volume-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;color:#c5daef;font-size:12px;font-weight:650;line-height:15px}
-.volume-heading small{font-size:9px;color:#8ba5c1;font-weight:400}
-.volume-bars{display:grid;grid-template-columns:repeat(15,minmax(0,1fr));gap:2px;height:81px;align-items:end;margin-top:4px}
-.volume-day{min-width:0;text-align:center;display:flex;flex-direction:column;justify-content:end;height:100%;gap:3px}
-.volume-bar-space{height:64px;padding-top:16px;box-sizing:border-box;display:flex;align-items:end;justify-content:center}.volume-bar{position:relative;width:100%;max-width:20px;border-radius:3px 3px 0 0;background:#608fbd;min-height:2px}
-.volume-value{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px;color:#c9def3;font-size:9px;font-weight:600;line-height:11px;letter-spacing:-.04em;white-space:nowrap}
-.market-volume.is-top10 .volume-bar{background:#919bd0}.market-volume.is-top10 .volume-heading{color:#cbd1f7}
-.volume-day.is-today .volume-bar{background:#b4ed78}.volume-day.is-today .volume-value{color:#c0ea95}
-.volume-day span{font-size:8px;color:#8fa7c1;white-space:nowrap;line-height:10px}.volume-day.is-today span{color:#b4d494}
+.volume-heading small{font-size:10px;color:#8ba5c1;font-weight:400}.volume-legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-weight:400;font-size:10px}.volume-legend .top10-label{color:#c3b7f2}.volume-legend .all-label{color:#a2c8ed}
+.volume-scroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:#355475 #111c29;padding-bottom:2px}.volume-scroll:focus-visible{outline:1px solid #83c3ff;outline-offset:2px}
+.volume-bars{display:grid;grid-template-columns:repeat(30,minmax(0,1fr));gap:3px;min-width:1050px;height:116px;align-items:end;margin-top:5px}
+.volume-day{min-width:0;text-align:center;display:grid;grid-template-rows:79px 15px 12px;align-content:end;gap:3px;height:100%}
+.volume-bar-space{height:79px;padding-top:17px;box-sizing:border-box;display:flex;align-items:end;justify-content:center;border-bottom:1px solid #304158}.volume-bar{position:relative;width:72%;max-width:24px;border-radius:3px 3px 0 0;background:#608fbd;min-height:2px}
+.volume-top10-segment{position:absolute;top:0;left:0;right:0;border-radius:3px 3px 0 0;background:#a193d2}
+.volume-value{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px;color:#d0c2fa;font-size:10px;font-weight:600;line-height:12px;letter-spacing:-.035em;white-space:nowrap}
+.volume-all-value{font-size:10px;font-weight:650;line-height:15px;letter-spacing:-.035em;color:#b6d6f3;white-space:nowrap}
+.volume-day.is-today .volume-bar{background:#669a65}.volume-day.is-today .volume-top10-segment{background:#b4ed78}.volume-day.is-today .volume-value,.volume-day.is-today .volume-all-value{color:#c0ea95}
+.volume-day>span{font-size:9px;color:#8fa7c1;white-space:nowrap;line-height:12px}.volume-day.is-today>span{color:#b4d494}
 .volume-loading{color:#9cb5ce;font-size:12px;padding:20px 0;line-height:1.6}.market-volume.is-delayed .volume-heading{color:#ffbe77}
-@container market-panel (max-width:800px){.volume-pair{grid-template-columns:1fr}}
-@container market-panel (max-width:390px){.volume-value{font-size:8px}.volume-bars{gap:1px}}
 .gmgn-card{min-width:0;background:#111e22;border:1px solid #33594d;border-radius:10px;padding:10px 12px;font-size:11px}
 .gmgn-card.leader-card{background:#111e22;border-color:#33594d}
 .gmgn-card.leader-card .gmgn-head{color:#a4dcb5}
@@ -180,31 +179,39 @@ def market_volume_card(now=None):
     snapshot=store.get(volume.SNAPSHOT_KEY,{})
     health=store.get('market_volume_health',{})
     ready=bool(snapshot.get('complete') and snapshot.get('range_start')==volume.window_start(now) and len(snapshot.get('days',[]))==volume.DAYS)
-    cards=[]
-    maximum=max((d['quote'] for d in snapshot.get('days',[])),default=0)
-    for kind,title,field in [('all','加密全市场 · 15日成交额','quote'),('top10','加密每日前10 · 15日成交额','top10_quote')]:
-        heading=f'<div class="volume-heading"><span>{title}</span><small>亿USDT · 含今日</small></div>'
-        if not ready:
-            count=health.get('total',0)
-            progress=f'（{health.get("completed",0)}/{count}）' if count else ''
-            cards.append(f'<section class="market-volume" data-volume-kind="{kind}">'+heading+f'<div class="volume-loading">15日数据补齐中{progress}</div></section>')
-            continue
-        bars=[]
-        for i,day in enumerate(snapshot['days']):
-            date=datetime.fromtimestamp(day['start']/1000,ZONE)
-            value=day[field]
-            tip=f'{date:%Y-%m-%d}'+(' 今日累计（未结束）' if i==volume.DAYS-1 else '')+f' · {value:,.2f} USDT'
-            if kind=='top10': tip+='\n'+ '、'.join(f'{t["symbol"]}: {t["quote"]/1e8:.2f}亿' for t in day['top10'])
-            height=max(2,value/maximum*46) if maximum else 2
-            label='今日' if i==volume.DAYS-1 else f'{date:%m/%d}'
-            bars.append(f'<div class="volume-day{" is-today" if i==volume.DAYS-1 else ""}" title="{html.escape(tip,quote=True)}"><div class="volume-bar-space"><div class="volume-bar" style="height:{height:.2f}px"><b class="volume-value">{value/1e8:.1f}</b></div></div><span>{label}</span></div>')
-        delayed=now-snapshot['updated_at']>1200 or health.get('status') not in ('统计完成','正在汇总')
-        updated=datetime.fromtimestamp(snapshot['updated_at'],ZONE).strftime('%m/%d %H:%M')
-        detail=f'北京时间15个自然日，今日未结束；仅统计加密USDT永续（含BTC/ETH），排除币股、大宗和ETF；{updated}更新。两图同比例。'
-        if kind=='top10':detail+='每一天单独按当日成交额取前10名，悬停柱子可看成分。'
-        if delayed:detail+='当前更新延迟。'
-        cards.append(f'<section class="market-volume{" is-top10" if kind=="top10" else ""}{" is-delayed" if delayed else ""}" data-volume-kind="{kind}" title="{detail}">'+heading+f'<div class="volume-bars" role="img" aria-label="{title}">'+''.join(bars)+'</div></section>')
-    return '<div class="volume-pair" data-market-volume="'+('ready' if ready else 'loading')+'">'+''.join(cards)+'</div>'
+    title=f'加密合约 · {volume.DAYS}日成交额'
+    heading=(f'<div class="volume-heading"><span>{title}</span><div class="volume-legend">'
+             '<span class="top10-label">柱上：每日前10</span><span class="all-label">柱下：全市场总额</span>'
+             '<small>亿USDT · 含今日</small></div></div>')
+    if not ready:
+        count=health.get('total',0)
+        progress=f'（{health.get("completed",0)}/{count}）' if count else ''
+        return '<section class="market-volume" data-market-volume="loading">'+heading+f'<div class="volume-loading">{volume.DAYS}日数据补齐中{progress}</div></section>'
+    maximum=max((d['quote'] for d in snapshot['days']),default=0)
+    bars=[]
+    for i,day in enumerate(snapshot['days']):
+        date=datetime.fromtimestamp(day['start']/1000,ZONE)
+        total=day['quote'];top10=day['top10_quote']
+        tip=(f'{date:%Y-%m-%d}'+(' 今日累计（未结束）' if i==volume.DAYS-1 else '')+
+             f'\n前10合计：{top10:,.2f} USDT\n全市场总额：{total:,.2f} USDT\n'+
+             '、'.join(f'{t["symbol"]}: {t["quote"]/1e8:.2f}亿' for t in day['top10']))
+        height=max(2,total/maximum*60) if maximum else 2
+        share=min(100,max(0,top10/total*100)) if total else 0
+        label='今日' if i==volume.DAYS-1 else f'{date:%m/%d}'
+        bars.append(f'<div class="volume-day{" is-today" if i==volume.DAYS-1 else ""}" title="{html.escape(tip,quote=True)}">'
+                    f'<div class="volume-bar-space"><div class="volume-bar" style="height:{height:.2f}px">'
+                    f'<i class="volume-top10-segment" style="height:{share:.2f}%"></i>'
+                    f'<b class="volume-value" data-volume-kind="top10">{top10/1e8:.1f}</b></div></div>'
+                    f'<b class="volume-all-value" data-volume-kind="all">{total/1e8:.1f}</b><span>{label}</span></div>')
+    delayed=now-snapshot['updated_at']>1200 or health.get('status') not in ('统计完成','正在汇总')
+    updated=datetime.fromtimestamp(snapshot['updated_at'],ZONE).strftime('%m/%d %H:%M')
+    detail=(f'北京时间{volume.DAYS}个自然日，今日未结束；仅统计加密USDT永续（含BTC/ETH），排除币股、大宗和ETF；{updated}更新。'
+            '柱高表示全市场总成交额，紫色段为其中每日前10的占比；柱上数字为前10合计，柱下数字为全市场总额。'
+            '每日单独排序，悬停可看成分。')
+    if delayed: detail+='当前更新延迟。'
+    return (f'<section class="market-volume{" is-delayed" if delayed else ""}" data-market-volume="ready" data-volume-days="{volume.DAYS}" title="{detail}">'+
+            heading+f'<div class="volume-scroll" role="region" aria-label="{title}，窄屏可左右滚动" tabindex="0">'+
+            f'<div class="volume-bars" role="img" aria-label="{title}，柱上为前10、柱下为总额">'+''.join(bars)+'</div></div></section>')
 
 
 def quick_prices(now=None):
