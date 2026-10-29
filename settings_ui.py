@@ -6,6 +6,8 @@ import streamlit as st
 import ai_analysis as ai
 import gmgn_credentials
 import gmgn_monitor as gmgn
+import blockbeats_monitor as news
+import blockbeats_credentials
 import store
 
 
@@ -40,6 +42,16 @@ def rules():
                 other_volume=other,poll_seconds=poll))
             st.success('已保存，下一轮扫描生效。')
     gmgn_acknowledgement()
+    st.subheader('律动快讯')
+    nc=news.configuration()
+    with st.form('blockbeats_rules'):
+        enabled=st.checkbox('启用律动中文快讯',value=bool(nc['enabled']))
+        auto=st.checkbox('信息流默认自动滚动',value=bool(nc['auto_scroll']))
+        speed=st.slider('快讯滚动速度（像素/秒）',min_value=4,max_value=40,value=int(nc['scroll_speed']))
+        st.caption('后台每5分钟读取一次官方API；浏览器滚动及刷新不消耗额外接口请求。鼠标悬停、键盘阅读或手动滚动时暂停，可在快讯框直接暂停/继续。')
+        if st.form_submit_button('保存快讯设置'):
+            store.put('blockbeats_config',dict(enabled=enabled,auto_scroll=auto,scroll_speed=speed))
+            st.success('已保存；默认滚动设置用于新的阅读会话，当前会话可用快讯框按钮调整。')
 
 
 def display_settings():
@@ -88,6 +100,19 @@ def api_settings():
                     st.error(str(error))
             else:
                 st.info('当前密钥保持不变。')
+    st.subheader('律动 BlockBeats 接口')
+    st.text_input('律动官方快讯接口',value=news.BASE+'/v1/newsflash',disabled=True)
+    st.caption('律动 Key：'+('已配置（本机加密或环境变量）' if blockbeats_credentials.key_available() else '尚未配置'))
+    with st.form('blockbeats_api'):
+        key=st.text_input('更新律动 API Key',type='password',help='留空保留当前密钥，不会显示已有Key。')
+        if st.form_submit_button('保存律动接口'):
+            if key.strip():
+                try:
+                    blockbeats_credentials.save_key(key)
+                    store.put('blockbeats_refresh_request',uuid.uuid4().hex)
+                    st.success('律动Key已加密保存，后台将验证新密钥。')
+                except ValueError as error:st.error(str(error))
+            else:st.info('当前律动密钥保持不变。')
     st.subheader('AI 接口配置')
     st.caption('可保存多个服务商的接口供后续分析使用；这里保存配置，不发起 AI 调用。')
     config=ai.configuration()
@@ -126,7 +151,7 @@ def diagnostics():
     now=time.time()
     labels=[('币安采集','monitor_health','heartbeat'),('币安全市场扫描','market_health','heartbeat'),
             ('币安实时流','stream_health','last_message'),('GMGN 四链扫描','gmgn_market','last_success'),
-            ('30日市场成交统计','market_volume_30d','updated_at')]
+            ('30日市场成交统计','market_volume_30d','updated_at'),('律动快讯','blockbeats_health','last_success')]
     for label,key,field in labels:
         snapshot=store.get(key,{})
         stamp=snapshot.get(field,0)

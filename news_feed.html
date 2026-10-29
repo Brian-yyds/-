@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#e7edf5;background:#0b1017}
+.news-frame{height:100%;display:flex;flex-direction:column;background:#101a26;border:1px solid #304d64;border-radius:12px;overflow:hidden}
+.news-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid #263b4f;background:linear-gradient(115deg,#152c3b,#111d2a)}
+.news-brand{display:flex;gap:8px;align-items:center}.news-mark{font-weight:850;font-size:18px;letter-spacing:-2px;color:#96d7ec;background:#203f50;border:1px solid #396176;border-radius:7px;padding:4px 7px}.news-heading h2{font-size:17px;margin:0;font-weight:750}.news-heading small{display:block;color:#8aa2b7;font-size:10px;margin-top:3px;letter-spacing:.07em}
+button{border:1px solid #39536c;color:#c7d8e9;background:#192a3b;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap}button:hover{background:#213c50}button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #a2dfed;outline-offset:3px}
+.news-state{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 14px;color:#88a6b9;font-size:10px;border-bottom:1px solid #213447}.news-state b{font-weight:500;color:#9acfb7}.news-state.is-delayed b{color:#ffc18a}
+.news-scroll{flex:1;min-height:0;overflow:auto;padding:0 14px;scrollbar-width:thin;scrollbar-color:#355369 #101a26;overscroll-behavior:contain}
+.news-item{position:relative;padding:16px 0 16px 15px;border-bottom:1px solid #233448}.news-item::before{content:"";position:absolute;left:0;top:21px;width:5px;height:5px;border-radius:50%;background:#638da6}
+.news-item:first-child::before{background:#a4dfeb;box-shadow:0 0 0 3px #254352}.news-time{display:block;color:#8aa2b7;font-size:10px;font-variant-numeric:tabular-nums;margin-bottom:7px}
+.news-title{font-size:14px;line-height:1.6;font-weight:650;text-decoration:none;color:#e5edf6;overflow-wrap:anywhere}.news-title:hover{color:#9de0ed}.news-content{font-size:12px;color:#aebfd0;line-height:1.85;margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere}
+details{margin-top:7px}summary{font-size:11px;color:#96cadd;cursor:pointer}.news-footer{border-top:1px solid #293f52;padding:9px 14px;color:#7895aa;font-size:10px;line-height:1.5;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.news-empty{color:#8fa7bc;font-size:13px;line-height:1.8;padding:30px 0}.news-footer strong{color:#aec9d8;font-weight:500}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style></head><body><section class="news-frame" aria-label="律动快讯信息流">
+<header class="news-heading"><div class="news-brand"><span class="news-mark" aria-hidden="true">BB</span><div><h2>律动快讯</h2><small>BLOCKBEATS · 中文信息流</small></div></div><button id="toggle" type="button">暂停滚动</button></header>
+<div class="news-state"><b id="source-status">等待采集</b><span id="updated"></span></div>
+<div id="news-scroll" class="news-scroll" role="feed" aria-label="快讯列表，鼠标悬停暂停自动滚动" tabindex="0"></div>
+<footer class="news-footer"><span>每5分钟获取 · 悬停暂停</span><strong id="motion-state">自动滚动</strong></footer>
+</section><script type="application/json" id="news-data">__NEWS_DATA__</script><script>
+(()=>{
+ const data=JSON.parse(document.getElementById('news-data').textContent);
+ const scroller=document.getElementById('news-scroll'),toggle=document.getElementById('toggle'),motion=document.getElementById('motion-state');
+ const make=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
+ const sourceLink=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&['theblockbeats.info','theblockbeats.news'].some(d=>u.hostname===d||u.hostname.endsWith('.'+d))?u.href:''}catch{return ''}};
+ for(const item of data.items){
+   const card=make('article','news-item');card.dataset.newsId=String(item.id);
+   card.append(make('time','news-time',item.published_text||'来源未提供发布时间'));
+   const url=sourceLink(item.link),title=make(url?'a':'div','news-title',item.title);
+   if(url){title.href=url;title.target='_blank';title.rel='noopener noreferrer';title.title='打开律动原文'}card.append(title);
+   const content=item.content||'';card.append(make('p','news-content',content.slice(0,1200)));
+   if(content.length>1200){const more=make('details');more.append(make('summary','', '展开完整快讯'),make('p','news-content',content.slice(1200)));card.append(more)}
+   scroller.append(card);
+ }
+ if(!data.items.length)scroller.append(make('p','news-empty','快讯采集启动后会在这里自动出现。'));
+ const state=document.querySelector('.news-state');
+ function sourceState(){
+   const stale=!data.last_success||Date.now()/1000-data.last_success>900;
+   state.classList.toggle('is-delayed',stale||data.error);
+   document.getElementById('source-status').textContent=!data.enabled?'采集已暂停':data.error?'连接重试中 · 显示缓存':stale?'等待更新':'中文快讯 · '+data.items.length+'条';
+   document.getElementById('source-status').title=data.coverage_limited?'恢复期间超过本轮150条补齐上限，历史可能有缺口':'发布时间按律动原文显示';
+   document.getElementById('updated').textContent=data.last_success?new Intl.DateTimeFormat('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Shanghai',hour12:false}).format(data.last_success*1000)+' 获取':'';
+ }
+ sourceState();setInterval(sourceState,15000);
+ const storage='perp-workbench.news.paused';
+ const positionStorage='perp-workbench.news.position';
+ let saved=null;try{saved=sessionStorage.getItem(storage)}catch{}
+ let paused=saved===null?(!data.auto_scroll||matchMedia('(prefers-reduced-motion: reduce)').matches):saved==='1';
+ let hover=false,focus=false,manualUntil=0,last=0,carry=0,positionSavedAt=0,holdUntil=performance.now()+3000;
+ function savePosition(){
+   try{const top=scroller.getBoundingClientRect().top,anchor=[...scroller.children].find(e=>e.dataset.newsId&&e.getBoundingClientRect().bottom>top+1);
+     if(anchor)sessionStorage.setItem(positionStorage,JSON.stringify({id:anchor.dataset.newsId,offset:Math.round(anchor.getBoundingClientRect().top-top)}));
+   }catch{}
+ }
+ requestAnimationFrame(()=>{try{const savedPosition=JSON.parse(sessionStorage.getItem(positionStorage)||'null');
+   if(savedPosition){const anchor=[...scroller.children].find(e=>e.dataset.newsId===savedPosition.id);
+     if(anchor)scroller.scrollTop+=anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-Number(savedPosition.offset||0)}
+ }catch{}});
+ addEventListener('pagehide',savePosition);
+ function status(){toggle.textContent=paused?'继续滚动':'暂停滚动';toggle.setAttribute('aria-pressed',String(paused));motion.textContent=paused?'已暂停':hover||focus?'阅读中 · 已暂停':'自动滚动'}
+ toggle.addEventListener('click',()=>{paused=!paused;try{sessionStorage.setItem(storage,paused?'1':'0')}catch{}savePosition();status()});
+ scroller.addEventListener('mouseenter',()=>{hover=true;status()});scroller.addEventListener('mouseleave',()=>{hover=false;status()});
+ scroller.addEventListener('focusin',()=>{focus=true;status()});scroller.addEventListener('focusout',()=>{focus=false;status()});
+ for(const event of ['wheel','touchstart','pointerdown','keydown'])scroller.addEventListener(event,()=>{manualUntil=performance.now()+30000},{passive:true});
+ const speed=Math.max(4,Math.min(40,Number(data.scroll_speed)||12));status();
+ function tick(stamp){
+   const dt=last?Math.min(stamp-last,100):0;last=stamp;
+   if(stamp-positionSavedAt>=1000){savePosition();positionSavedAt=stamp}
+   const reading=scroller.querySelector('details[open]');
+   if(!paused&&!hover&&!focus&&!document.hidden&&!reading&&stamp>=manualUntil&&stamp>=holdUntil&&scroller.scrollHeight>scroller.clientHeight+2){
+     if(scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-2){scroller.scrollTop=0;holdUntil=stamp+4000;carry=0}
+     else{carry+=speed*dt/1000;const pixels=Math.floor(carry);if(pixels){scroller.scrollTop+=pixels;carry-=pixels}}
+   }
+   requestAnimationFrame(tick);
+ }
+ requestAnimationFrame(tick);
+})();
+</script></body></html>

@@ -2,6 +2,8 @@
 
 ## 当前监控版
 
+2026-10-29新增律动快讯：读取BlockBeats官方Pro REST API（https://www.theblockbeats.info/apiDoc），仅调用HTTPS `/v1/newsflash`，复用Requests、Python HTMLParser、Windows DPAPI和Streamlit iframe。未复制MCP或旧版已停用接口实现，不加载远程脚本。快讯内容及版权属于律动及其原作者，保留来源和原文链接。
+
 当前默认启动包含 Streamlit 监控界面、币安公共行情采集器和独立GMGN热门监控。实时推送使用开源 websockets（BSD-3-Clause），HTTP请求使用Requests（Apache-2.0），图表使用Plotly（MIT）。不重写交易所数据协议，不调用交易或账户接口。
 
 2026-10-28新增采集同步：SFTP 使用 Paramiko 5.1.0（LGPL-2.1-or-later，https://github.com/paramiko/paramiko ），ed25519 密钥生成使用 cryptography；复用 SSH/SFTP 协议和密码学库，不自行实现密钥算法。Windows 私钥通过既有 DPAPI 保险箱加密，仅本机用户可解密。主机身份采用固定公钥校验，不自动信任未知或变化的公钥。接口依据 https://docs.paramiko.org/en/stable/api/client.html 和 https://docs.paramiko.org/en/stable/api/sftp.html 。

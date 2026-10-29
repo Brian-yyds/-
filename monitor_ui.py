@@ -154,6 +154,22 @@ a.contract-link:hover{color:#b4ed78!important;text-decoration:underline!importan
  .quick-price-status{grid-column:1/-1}.focus-change{margin:0}
 }
 @media(max-width:640px){.pending-label{margin-left:0;flex-basis:100%}.screen-heading{align-items:flex-start;flex-direction:column}}
+.screen-heading{margin-bottom:2px}.screen-heading h1{font-size:clamp(1.25rem,1.9vw,1.7rem)!important}
+.live-line{font-size:11px;margin:8px 0 10px;gap:6px 10px}.live-line .pending-label{max-width:45%}
+.overview-strip,.rankings-grid{max-width:none}.overview-strip .quick-prices{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.overview-strip .quick-price{padding:8px 10px}.overview-strip .quick-price-value strong{font-size:clamp(1.1rem,2cqi,1.55rem)}
+.market-rankings.rankings-grid{--rank-row:34px;--rank-head:28px;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.market-rankings .rank-title{height:43px}.market-rankings .rank-title h2{font-size:16px!important}
+.alert-panels{--rank-row:34px;--rank-head:28px;--panel-body:248px;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.5fr);gap:10px;align-items:stretch}
+.alert-panels>.gmgn-panel{grid-column:auto}.alert-panels .rank-title{height:42px}.alert-panels .rank-title h2{font-size:16px!important}
+.alert-panels .gmgn-combined{min-height:var(--panel-body)}.alert-panels .gmgn-hour-scroll{height:calc(var(--panel-body) - 26px)}
+.alert-panels .gmgn-combined .gmgn-mini{padding-top:5px}.alert-panels .gmgn-combined .gmgn-mini+.gmgn-mini{margin-top:4px;padding-top:4px}
+.alert-panels .alarm-box{height:var(--panel-body)}
+.alert-panels .gmgn-hour-scroll{height:calc(var(--panel-body) - 44px)}
+.volume-bars{min-width:840px}.volume-value,.volume-all-value{font-size:clamp(8px,1cqi,10px)}.volume-day>span{font-size:clamp(8px,.95cqi,9px)}
+.st-key-dashboard{margin-top:0}.st-key-dashboard [data-testid="stColumn"]{min-width:0}
+@media(max-width:1250px){.st-key-dashboard [data-testid="stHorizontalBlock"]{flex-direction:column}.st-key-dashboard [data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important}}
+@container market-panel (max-width:600px){.market-rankings.rankings-grid{grid-template-columns:1fr}.alert-panels{grid-template-columns:1fr}.live-line .pending-label{max-width:none}}
 </style>'''
 
 
@@ -390,9 +406,8 @@ def board(scope,search,oi_direction,asset_scope='全部'):
            and (asset_scope=='全部' or r['asset_type']=={'股票':'stock','加密货币':'crypto','大宗':'commodity'}.get(asset_scope))]
     cards=''.join(ranking_card(monitoring.ranked(shown,kind)[:30],title,kind)
                   for title,kind in zip(['OI 异动榜','上涨榜','下跌榜'],['oi_up' if oi_direction=='增仓' else 'oi_down','up','down']))
-    cards+=alarm_card(pending,cfg)+gmgn_combined_card()
-    st.markdown('<div class="market-panel"><div class="rankings-grid">'+cards+'</div></div>',unsafe_allow_html=True)
-    # Leave the area below this compact row free for future monitoring panels.
+    alerts=alarm_card(pending,cfg)+gmgn_combined_card()
+    st.markdown('<div class="market-panel"><div class="rankings-grid market-rankings">'+cards+'</div><div class="alert-panels">'+alerts+'</div></div>',unsafe_allow_html=True)
     # Rankings are a viewing filter; they must never hide market-wide alarms.
     if not alive or not scanner_alive:
         st.warning('采集服务正在连接或心跳已过期；恢复连接后自动更新。')
@@ -402,7 +417,13 @@ def monitor_page():
     view=store.get('monitor_view',{})
     scope='加密、币股/ETF与大宗永续'
     st.markdown('<div class="screen-heading"><h1>全市场异动监控</h1><span>币安 USDT · '+scope+'</span></div>',unsafe_allow_html=True)
-    board(view.get('scope','全市场'),view.get('search',''),view.get('oi_direction','增仓'),view.get('asset_scope','全部'))
+    from blockbeats_ui import news_panel
+    with st.container(key='dashboard'):
+        market,news=st.columns([3.4,1.2],gap='medium',vertical_alignment='top')
+        with market:
+            board(view.get('scope','全市场'),view.get('search',''),view.get('oi_direction','增仓'),view.get('asset_scope','全部'))
+        with news:
+            news_panel()
 
 
 def settings_page():

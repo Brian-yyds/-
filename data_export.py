@@ -110,8 +110,19 @@ def health(context):
         'market_scan': ('market_health', 'heartbeat total history_seeded round_seconds sampling'),
         'gmgn': ('gmgn_market', 'heartbeat last_success retry_at hot_updated'),
         'volume': ('market_volume_health', 'heartbeat completed total failed blocked_until'),
+        'blockbeats': ('blockbeats_health', 'heartbeat last_success next_poll_at enabled fetched coverage_limited'),
     }
     return {name: fields(store.get(key, {}), names) for name, (key, names) in specs.items()}
+
+
+@section('blockbeats_news')
+def blockbeats_news(context):
+    import blockbeats_monitor as news
+    health=store.get('blockbeats_health',{})
+    return dict(source='律动 BlockBeats',poll_seconds=news.INTERVAL,enabled=bool(news.configuration()['enabled']),
+                observed_at=health.get('last_success'),next_poll_at=health.get('next_poll_at'),
+                coverage_limited=bool(health.get('coverage_limited')),
+                items=[fields(row,'id title content link published_at published_text observed') for row in news.recent(100)])
 
 
 def read_events(cursor):
