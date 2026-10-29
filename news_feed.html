@@ -5,13 +5,14 @@
 .news-frame{height:100%;display:flex;flex-direction:column;background:#101a26;border:1px solid #304d64;border-radius:12px;overflow:hidden}
 .news-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid #263b4f;background:linear-gradient(115deg,#152c3b,#111d2a)}
 .news-brand{display:flex;gap:8px;align-items:center}.news-mark{font-weight:850;font-size:18px;letter-spacing:-2px;color:#96d7ec;background:#203f50;border:1px solid #396176;border-radius:7px;padding:4px 7px}.news-heading h2{font-size:17px;margin:0;font-weight:750}.news-heading small{display:block;color:#8aa2b7;font-size:10px;margin-top:3px;letter-spacing:.07em}
-.reading-mode{font-size:11px;color:#94b6c8;white-space:nowrap}a:focus-visible,summary:focus-visible{outline:2px solid #a2dfed;outline-offset:3px}
+.reading-mode{font-size:11px;color:#94b6c8;white-space:nowrap}a:focus-visible,button:focus-visible{outline:2px solid #a2dfed;outline-offset:3px}
+.news-title-row{display:flex;align-items:baseline;gap:8px}.news-title-row .news-title{flex:1;min-width:0}.news-expand{flex:none;border:1px solid #37546a;background:#152a3a;color:#a6d9e8;border-radius:5px;font-size:11px;line-height:1.6;padding:1px 7px;cursor:pointer}.news-expand:hover{background:#254255}.news-content[hidden]{display:none}
 .news-state{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 14px;color:#88a6b9;font-size:10px;border-bottom:1px solid #213447}.news-state b{font-weight:500;color:#9acfb7}.news-state.is-delayed b{color:#ffc18a}
 .news-scroll{flex:1;min-height:0;overflow:auto;padding:0 14px;scrollbar-width:thin;scrollbar-color:#355369 #101a26;overscroll-behavior:contain}
 .news-item{position:relative;padding:16px 0 16px 15px;border-bottom:1px solid #233448}.news-item::before{content:"";position:absolute;left:0;top:21px;width:5px;height:5px;border-radius:50%;background:#638da6}
 .news-item:first-child::before{background:#a4dfeb;box-shadow:0 0 0 3px #254352}.news-time{display:block;color:#8aa2b7;font-size:11px;font-variant-numeric:tabular-nums;margin-bottom:7px}
 .news-title{font-size:15px;line-height:1.6;font-weight:650;text-decoration:none;color:#e5edf6;overflow-wrap:anywhere}.news-title:hover{color:#9de0ed}.news-content{font-size:13px;color:#aebfd0;line-height:1.85;margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere}
-details{margin-top:7px}summary{font-size:11px;color:#96cadd;cursor:pointer}.news-footer{border-top:1px solid #293f52;padding:9px 14px;color:#7895aa;font-size:10px;line-height:1.5;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.news-empty{color:#8fa7bc;font-size:13px;line-height:1.8;padding:30px 0}.news-footer strong{color:#aec9d8;font-weight:500}
+.news-footer{border-top:1px solid #293f52;padding:9px 14px;color:#7895aa;font-size:10px;line-height:1.5;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.news-empty{color:#8fa7bc;font-size:13px;line-height:1.8;padding:30px 0}.news-footer strong{color:#aec9d8;font-weight:500}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style></head><body><section class="news-frame" aria-label="律动快讯信息流">
 <header class="news-heading"><div class="news-brand"><span class="news-mark" aria-hidden="true">BB</span><div><h2>律动快讯</h2><small>BLOCKBEATS · 中文信息流</small></div></div><span class="reading-mode">手动阅读</span></header>
@@ -22,15 +23,23 @@ details{margin-top:7px}summary{font-size:11px;color:#96cadd;cursor:pointer}.news
 (()=>{
  const data=JSON.parse(document.getElementById('news-data').textContent);
  const scroller=document.getElementById('news-scroll');
+ const expandedStorage='perp-workbench.news.expanded';
+ let expanded=new Set();try{const saved=JSON.parse(sessionStorage.getItem(expandedStorage)||'[]');if(Array.isArray(saved))expanded=new Set(saved.filter(id=>data.items.some(item=>String(item.id)===id)))}catch{}
  const make=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
  const sourceLink=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&['theblockbeats.info','theblockbeats.news'].some(d=>u.hostname===d||u.hostname.endsWith('.'+d))?u.href:''}catch{return ''}};
  for(const item of data.items){
    const card=make('article','news-item');card.dataset.newsId=String(item.id);
    card.append(make('time','news-time',item.published_text||'来源未提供发布时间'));
    const url=sourceLink(item.link),title=make(url?'a':'div','news-title',item.title);
-   if(url){title.href=url;title.target='_blank';title.rel='noopener noreferrer';title.title='打开律动原文'}card.append(title);
-   const content=item.content||'';card.append(make('p','news-content',content.slice(0,1200)));
-   if(content.length>1200){const more=make('details');more.append(make('summary','', '展开完整快讯'),make('p','news-content',content.slice(1200)));card.append(more)}
+   if(url){title.href=url;title.target='_blank';title.rel='noopener noreferrer';title.title='打开律动原文'}
+   const row=make('div','news-title-row');row.append(title);card.append(row);
+   if(item.content){
+     const body=make('p','news-content',item.content),button=make('button','news-expand');
+     body.id='news-body-'+item.id;button.type='button';button.setAttribute('aria-controls',body.id);
+     function setExpanded(open){body.hidden=!open;button.textContent=open?'收起':'展开';button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-label',(open?'收起全文：':'展开全文：')+item.title)}
+     setExpanded(expanded.has(String(item.id)));row.append(button);card.append(body);
+     button.addEventListener('click',()=>{const open=body.hidden;setExpanded(open);if(open)expanded.add(String(item.id));else expanded.delete(String(item.id));try{sessionStorage.setItem(expandedStorage,JSON.stringify([...expanded]))}catch{}savePosition()});
+   }
    scroller.append(card);
  }
  if(!data.items.length)scroller.append(make('p','news-empty','快讯采集启动后会在这里自动出现。'));

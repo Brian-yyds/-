@@ -168,10 +168,33 @@ a.contract-link:hover{color:#b4ed78!important;text-decoration:underline!importan
 .alert-panels .gmgn-hour-scroll{height:calc(var(--panel-body) - 44px)}
 .volume-bars{min-width:840px}.volume-value,.volume-all-value{font-size:clamp(8px,1cqi,10px)}.volume-day>span{font-size:clamp(8px,.95cqi,9px)}
 .st-key-dashboard{margin-top:0}.st-key-dashboard [data-testid="stColumn"]{min-width:0}
-.st-key-news-column [data-testid="stElementContainer"]:has(>iframe[title="律动快讯信息流"]){height:max(600px,calc(100dvh - 150px))!important;flex-basis:auto!important}
+.st-key-news-column [data-testid="stElementContainer"]:has(>iframe[title="律动快讯信息流"]){height:max(600px,calc(100dvh - 75px))!important;flex-basis:auto!important}
 .st-key-news-column iframe[title="律动快讯信息流"]{height:100%!important}
 @media(max-width:1250px){.st-key-dashboard [data-testid="stHorizontalBlock"]{flex-direction:column}.st-key-dashboard [data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important}}
 @container market-panel (max-width:600px){.market-rankings.rankings-grid{grid-template-columns:1fr}.alert-panels{grid-template-columns:1fr}.live-line .pending-label{max-width:none}}
+/* Compact navigation stays accessible through a small menu in the title row. */
+[data-testid="stHeader"]{display:none}
+[data-testid="stMainBlockContainer"]{padding:12px clamp(.75rem,1.7vw,2rem) 12px}
+.screen-heading{align-items:center;gap:6px 16px;margin:0;min-height:29px}
+.screen-heading h1{font-size:20px!important;line-height:1.2}
+.screen-heading>span{font-size:11px}
+.desk-menu{position:relative;margin-left:auto;color:#9ab0c5;font-size:12px;z-index:10}
+.desk-menu summary{cursor:pointer;list-style:none;padding:4px 8px;border:1px solid #2b4155;border-radius:6px;line-height:20px}
+.desk-menu summary::-webkit-details-marker{display:none}.desk-menu summary:focus-visible{outline:2px solid #b4ed78}
+.desk-menu nav{position:absolute;right:0;top:34px;min-width:150px;background:#152232;border:1px solid #39516c;border-radius:8px;padding:5px;box-shadow:0 8px 22px #0008}
+.desk-menu a{display:block;color:#d5e5f5!important;text-decoration:none!important;padding:9px;border-radius:4px}.desk-menu a:hover{background:#263c50}
+@media(min-width:1251px){
+ .market-rankings.rankings-grid{--panel-body:max(198px,calc((100dvh - 520px) / 2));--rank-row:calc((var(--panel-body) - var(--rank-head)) / 5)}
+ .alert-panels{--panel-body:max(248px,calc((100dvh - 520px) / 2))}
+ .alert-panels .history-card{display:flex;flex-direction:column;height:var(--panel-body);box-sizing:border-box;overflow-y:auto}
+ .alert-panels .history-card .gmgn-mini{flex:1;align-content:center}
+ .alert-panels .gmgn-hour-table td{height:max(36px,calc((var(--panel-body) - 68px) / 7))}
+}
+@media(min-width:1251px) and (max-height:920px){
+ .market-rankings.rankings-grid{--panel-body:178px}
+ .alert-panels{--panel-body:214px}
+}
+@media(max-width:640px){.screen-heading{flex-direction:row;align-items:center}.screen-heading>span{display:none}.screen-heading h1{font-size:18px!important}}
 </style>'''
 
 
@@ -418,7 +441,7 @@ def board(scope,search,oi_direction,asset_scope='全部'):
 def monitor_page():
     view=store.get('monitor_view',{})
     scope='加密、币股/ETF与大宗永续'
-    st.markdown('<div class="screen-heading"><h1>全市场异动监控</h1><span>币安 USDT · '+scope+'</span></div>',unsafe_allow_html=True)
+    st.markdown('<div class="screen-heading"><h1>全市场异动监控</h1><span>币安 USDT · '+scope+'</span><details class="desk-menu"><summary aria-label="页面导航">☰</summary><nav aria-label="页面导航"><a href="/" target="_self">监控面板</a><a href="/settings" target="_self">设置与调试</a></nav></details></div>',unsafe_allow_html=True)
     from blockbeats_ui import news_panel
     with st.container(key='dashboard'):
         news,market=st.columns([1.55,3.05],gap='medium',vertical_alignment='top')
@@ -430,6 +453,7 @@ def monitor_page():
 
 
 def settings_page():
+    st.page_link(st.Page(monitor_page,title='监控面板',default=True),label='← 返回监控面板')
     from settings_ui import render_settings
     render_settings()
 
@@ -438,4 +462,4 @@ def render():
     st.set_page_config(page_title='全市场异动监控',page_icon='◉',layout='wide',initial_sidebar_state='collapsed')
     st.markdown(STYLE,unsafe_allow_html=True)
     st.navigation([st.Page(monitor_page,title='监控面板',default=True),
-                   st.Page(settings_page,title='设置与调试',url_path='settings')],position='top').run()
+                   st.Page(settings_page,title='设置与调试',url_path='settings')],position='hidden').run()
