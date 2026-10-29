@@ -26,6 +26,13 @@ if (proxy && /^socks[45]:/i.test(proxy)) {
   dispatcher = proxy ? new ProxyAgent(proxy) : new Agent({connect:buildConnector({family:4})});
 }
 setGlobalDispatcher(dispatcher);
+// Keep diagnostics to fixed categories and HTTP metadata, never raw errors,
+// request URLs/headers or provider response bodies (which may contain secrets).
+const nativeFetch=globalThis.fetch;
+let httpStatus=0;
+let networkCode='';
+let requestTimeout=20000;
+globalThis.fetch=async (url,options={})=>{httpStatus=0;networkCode='';try{const timeout=AbortSignal.timeout(requestTimeout);const signal=options.signal?AbortSignal.any([options.signal,timeout]):timeout;const response=await nativeFetch(url,{...options,signal});httpStatus=response.status;return response}catch(error){let cause=error;for(let i=0;cause?.cause&&i<5;i++)cause=cause.cause;networkCode=/^[A-Z_0-9]{1,60}$/.test(String(cause?.code||''))?cause.code:'';throw error}};
 try {
   let input='';
   for await (const part of process.stdin) input+=part;
@@ -35,10 +42,13 @@ try {
   const client=new OpenApiClient({apiKey:process.env.GMGN_API_KEY,host:'https://openapi.gmgn.ai'});
   let data;
   if(request.command==='trending' && ['sol','bsc','base','robinhood'].includes(request.chain)) {
+    const extra={};
+    if(Number.isFinite(request.max_volume)&&request.max_volume>=0)extra.max_volume=request.max_volume;
     data=await client.getTrendingSwaps(request.chain,'5m',{
-      order_by:'volume',direction:'desc',limit:100,filters:['is_internal_market','is_out_market'],
+      order_by:'volume',direction:'desc',limit:Number.isInteger(request.limit)&&request.limit>=10&&request.limit<=100?request.limit:50,filters:['is_out_market'],...extra,
     });
   } else if(request.command==='info-batch' && Array.isArray(request.tokens) && request.tokens.length>=1 && request.tokens.length<=10) {
+    requestTimeout=8000;
     data=[];
     for(const [index,t] of request.tokens.entries()) {
       const valid=['sol','bsc','base','robinhood'].includes(t.chain) && typeof t.address==='string' &&
@@ -58,7 +68,9 @@ try {
   process.stdout.write(JSON.stringify({ok:true,data:safe.data,sanitized:safe.changed}));
 } catch(error) {
   // Structured, sanitized errors only; never emit request headers or API payloads.
-  process.stdout.write(JSON.stringify({ok:false,error:{status:error.status||0,
-    code:error.apiError||'NETWORK_ERROR',reset_at:error.resetAtUnix||0}}));
+  const message=String(error.message||'');
+  const category=message.includes('non-JSON response')?'NON_JSON_RESPONSE':message.includes('failed to read response body')?'RESPONSE_BODY_ERROR':/timeout|timed out|aborted/i.test(message)?'TIMEOUT':'NETWORK_ERROR';
+  process.stdout.write(JSON.stringify({ok:false,error:{status:error.status||httpStatus||0,
+    code:error.apiError||networkCode||category,reset_at:error.resetAtUnix||0}}));
   process.exitCode=1;
 } finally {await dispatcher.close();}

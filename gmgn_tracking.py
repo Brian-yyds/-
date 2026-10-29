@@ -8,6 +8,7 @@ WINDOW_SECONDS = 10*86400
 FRESH_SECONDS = 180
 INFO_INTERVAL = 60
 MAX_INFO_PER_CYCLE = 20
+INFO_BATCH = 5
 
 
 def identity(chain,address):
@@ -136,8 +137,9 @@ def refresh_info(client,cfg,now=None):
     import gmgn_monitor as g
     now=time.time() if now is None else now
     due=[r for r in watch_rows(now) if now>=r['info_retry'] and now-r['info_attempt']>=INFO_INTERVAL][:MAX_INFO_PER_CYCLE]
-    for start in range(0,len(due),10):
-        group=due[start:start+10]
+    report=dict(attempted=len(due),succeeded=0)
+    for start in range(0,len(due),INFO_BATCH):
+        group=due[start:start+INFO_BATCH]
         attempted=time.time()
         with store.connect() as con:
             con.executemany('UPDATE gmgn_watch SET info_attempt=?,info_retry=? WHERE chain=? AND address=?',
@@ -156,7 +158,11 @@ def refresh_info(client,cfg,now=None):
             try:token,volume=parse_info(item.get('data'),key[0],key[1],observed)
             except (TypeError,ValueError):continue
             record_scan(key[0],[token],cfg,observed)
+            report['succeeded']+=1
             with store.connect() as con:
                 if volume is not None:
                     con.execute('UPDATE gmgn_watch SET volume_1h=?,volume_observed=? WHERE chain=? AND address=? AND expires_at>? AND volume_observed<=?',
                                 (volume,observed,key[0],key[1],observed,observed))
+    if due:
+        store.put('gmgn_info_health',report|dict(updated=time.time(),failed=report['attempted']-report['succeeded']))
+    return report

@@ -178,6 +178,7 @@ def test_one_chain_failure_does_not_stop_other_chains_or_watched_info(isolated):
             if args[0]=='market' and args[args.index('--chain')+1]=='sol':raise g.QueryError('test')
             return super().query(args)
     client=Partial()
-    with pytest.raises(g.QueryError):g.Monitor(client).cycle()
+    g.Monitor(client).cycle()
     assert len([c for c in client.calls if c[0]=='market'])==3
     assert t.ranking_snapshot(NOW)['fresh']==1
+    assert store.get('gmgn_market')['chains']['sol']['failures']==1

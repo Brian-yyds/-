@@ -178,9 +178,11 @@ def system_proxy():
 
 
 class QueryError(Exception):
-    def __init__(self, message, delay=30):
+    def __init__(self, message, delay=30,code='QUERY_ERROR',status=0):
         super().__init__(message)
         self.delay = delay
+        self.code=code if isinstance(code,str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,80}',code) else 'QUERY_ERROR'
+        self.status=status if isinstance(status,int) else 0
 
 
 class Client:
@@ -216,6 +218,14 @@ class Client:
         request = {'command':args[1]}
         if args[1]=='trending':
             request['chain']=args[args.index('--chain')+1]
+            if '--limit' in args:
+                limit=int(args[args.index('--limit')+1])
+                if not 10<=limit<=100:raise ValueError('候选批量大小无效')
+                request['limit']=limit
+            if '--max-volume' in args:
+                ceiling=number(args[args.index('--max-volume')+1])
+                if ceiling is None:raise ValueError('候选成交额边界无效')
+                request['max_volume']=ceiling
         elif args[:2]==['token','info-batch']:
             params=json.loads(args[args.index('--params')+1])
             if not isinstance(params,list) or not 1<=len(params)<=10 or any(not isinstance(p,dict) or not valid_address(p.get('chain'),p.get('address')) for p in params):
@@ -226,7 +236,7 @@ class Client:
                                   input=json.dumps(request),capture_output=True,text=True,encoding='utf-8',timeout=80 if args[1]=='info-batch' else 25,
                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
         except (subprocess.TimeoutExpired, OSError):
-            raise QueryError('GMGN 连接超时，稍后重试', 30)
+            raise QueryError('GMGN 连接超时，稍后重试',30,'PROCESS_TIMEOUT')
         finally:
             self.last_call = time.monotonic()
         try:
@@ -235,13 +245,16 @@ class Client:
             raise QueryError('GMGN 返回格式异常，请检查官方工具安装', 60)
         if not envelope.get('ok'):
             error=envelope.get('error',{})
+            code=error.get('code','NETWORK_ERROR');status=error.get('status',0)
             if error.get('status')==429 or 'RATE_LIMIT' in error.get('code',''):
                 delay=max(5,float(error.get('reset_at',0))-time.time()+2) if error.get('reset_at') else 305
                 store.put('gmgn_rate_limit_until',time.time()+delay)
-                raise QueryError('GMGN 限频，已暂停请求等待恢复', delay)
+                raise QueryError('GMGN 限频，已暂停请求等待恢复',delay,code,status)
             if error.get('status') in (401,403):
-                raise QueryError('GMGN 授权或套餐限制，请检查 API Key 权限', 300)
-            raise QueryError('GMGN 数据暂不可用，稍后重试', 30)
+                raise QueryError('GMGN 授权或套餐限制，请检查 API Key 权限',300,code,status)
+            if isinstance(status,int) and status>=500:
+                raise QueryError('GMGN 上游服务异常，稍后重试',60,code,status)
+            raise QueryError('GMGN 连接或返回数据暂不可用，稍后重试',30,code,status)
         data=envelope.get('data')
         if isinstance(data,dict) and 'code' in data:
             if data['code']!=0:
@@ -261,6 +274,38 @@ class Monitor:
         self.refresh_equities = client is None
         self.client = client or Client()
 
+    def candidates(self,chain,cfg):
+        """Small responses; supplement only while the tail can still qualify.
+
+        max_volume is inclusive, so deduplicate its boundary. If a large tie,
+        unknown value or two full pages still reach the alarm floor, report
+        limited coverage instead of pretending the whole chain was checked.
+        """
+        limit=50;threshold=min(cfg['graduate_volume'],cfg['other_volume'])
+        tokens={};ceiling=None;capped=False;pages=0
+        for _ in range(2):
+            args=['market','trending','--chain',chain,'--interval','5m','--order-by','volume',
+                  '--direction','desc','--limit',str(limit),'--filter','is_out_market','--raw']
+            if ceiling is not None:args+=['--max-volume',str(ceiling)]
+            try:result=self.client.query(args)
+            except QueryError as error:
+                error.partial_tokens=list(tokens.values())
+                raise
+            pages+=1
+            if not isinstance(result,dict) or not isinstance(result.get('rank'),list):
+                raise QueryError('GMGN 候选数据格式变化，稍后重试',60,'DATA_SHAPE')
+            rank=result['rank'];stamp=time.time()
+            values=[number(r.get('volume')) if isinstance(r,dict) else None for r in rank]
+            ordered=all(v is not None for v in values) and all(a>=b for a,b in zip(values,values[1:]))
+            for raw in rank:
+                token=normalize(raw,chain,stamp)
+                if token:tokens[tracking.identity(chain,token['address'])]=token
+            tail=values[-1] if values else 0
+            capped=bool(rank) and (not ordered or len(rank)>=limit and tail>threshold)
+            if not capped or not ordered or ceiling is not None and tail>=ceiling:break
+            ceiling=tail
+        return list(tokens.values()),dict(count=len(tokens),capped=capped,pages=pages,batch_limit=limit)
+
     def cycle(self):
         cfg=configuration()
         snapshot=store.get('gmgn_market',{})
@@ -274,33 +319,52 @@ class Monitor:
         if self.refresh_equities:equities.refresh_catalogs()
         errors=[]
         for chain in CHAINS:
+            previous=snapshot['chains'].get(chain,{})
+            if previous.get('retry_at',0)>time.time():
+                errors.append(QueryError(previous.get('error','链采集等待恢复'),previous['retry_at']-time.time()))
+                continue
+            attempted=time.time()
             try:
-                result=self.client.query(['market','trending','--chain',chain,'--interval','5m',
-                    '--order-by','volume','--direction','desc','--limit','100','--filter','is_internal_market','is_out_market','--raw'])
-                if not isinstance(result,dict) or not isinstance(result.get('rank'),list):
-                    raise QueryError('GMGN 候选数据格式变化，稍后重试')
+                tokens,coverage=self.candidates(chain,cfg)
                 stamp=time.time()
-                tokens=[t for raw in result['rank'] if (t:=normalize(raw,chain,stamp))]
                 record_scan(chain,tokens,cfg,stamp)
-                threshold=min(cfg['graduate_volume'],cfg['other_volume'])
-                capped=len(tokens)>=100 and any(t['volume'] is None or t['volume']>=threshold for t in tokens[-1:])
-                snapshot['chains'][chain]=dict(updated=stamp,count=len(tokens),capped=capped)
+                snapshot['chains'][chain]=coverage|dict(updated=stamp,last_attempt=attempted,retry_at=0,error='',error_code='',failures=0,duration=round(stamp-attempted,2))
+                if previous.get('failures') or attempted-previous.get('updated',attempted)>180:
+                    print(json.dumps(dict(event='gmgn_chain_recovered',chain=chain,time=stamp,count=len(tokens))),flush=True)
                 snapshot.update(heartbeat=stamp,enabled=True,status='正在扫描四链')
                 store.put('gmgn_market',snapshot)
             except QueryError as error:
+                failures=previous.get('failures',0)+1
+                wait=max(error.delay,min(300,30*2**min(failures-1,4)))
+                stamp=time.time()
+                partial=getattr(error,'partial_tokens',[])
+                if partial:
+                    observed=max(t['observed'] for t in partial)
+                    if stamp-observed<=120:
+                        record_scan(chain,partial,cfg,observed)
+                        previous=previous|dict(updated=observed,count=len(partial),capped=True)
+                snapshot['chains'][chain]=previous|dict(last_attempt=attempted,retry_at=stamp+wait,error=str(error),error_code=error.code,error_status=error.status,failures=failures,duration=round(stamp-attempted,2))
+                snapshot.update(heartbeat=stamp,status='部分链采集异常',enabled=True)
+                store.put('gmgn_market',snapshot)
+                print(json.dumps(dict(event='gmgn_chain_retry',chain=chain,time=stamp,code=error.code,status=error.status,wait=round(wait),failures=failures)),flush=True)
                 if store.get('gmgn_rate_limit_until',0)>time.time():raise
                 errors.append(error)
-        try:tracking.refresh_info(self.client,cfg)
+        try:
+            tracking.refresh_info(self.client,cfg)
+            snapshot['info_error']=''
         except QueryError as error:
+            snapshot['info_error']=str(error)
             if store.get('gmgn_rate_limit_until',0)>time.time():raise
             errors.append(error)
         stamp=time.time()
-        snapshot.update(heartbeat=stamp,enabled=True,status='监控中' if not errors else str(errors[0]),
-                        retry_at=stamp+max(e.delay for e in errors) if errors else 0)
+        retries=[c['retry_at'] for c in snapshot['chains'].values() if c.get('retry_at',0)>stamp]
+        snapshot.update(heartbeat=stamp,enabled=True,status='监控中' if not errors else '部分数据等待恢复',
+                        retry_at=min(retries) if retries else 0)
         snapshot['watch_ranking']=tracking.ranking_snapshot(stamp)
         if not errors:snapshot['last_success']=stamp
         store.put('gmgn_market',snapshot)
-        if errors:raise errors[0]
+        # Per-chain backoff is persisted above. Keep healthy chains scanning at
+        # the configured cadence; only a global quota cooldown pauses everyone.
 
 
 def run():

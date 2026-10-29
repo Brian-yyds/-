@@ -159,6 +159,16 @@ def diagnostics():
         st.write(f'**{label}** · {text}')
     snapshot=store.get('gmgn_market',{})
     if snapshot.get('status'): st.caption('GMGN：'+snapshot['status'])
+    for chain in gmgn.CHAINS:
+        state=snapshot.get('chains',{}).get(chain,{})
+        updated=state.get('updated',0)
+        age=f'{max(0,now-updated):.0f} 秒前' if updated else '尚未成功'
+        retry=max(0,state.get('retry_at',0)-now)
+        st.write(f'**{gmgn.CHAIN_LABELS[chain]}** · 更新 {age} · 候选 {state.get("count",0)} 个'+(' · 覆盖有限' if state.get('capped') else ''))
+        if state.get('error'):st.caption(f'{state["error"]}（{state.get("error_code","QUERY_ERROR")}）；连续失败 {state.get("failures",0)} 次，{retry:.0f} 秒后重试。')
+    info=store.get('gmgn_info_health',{})
+    if info:st.caption(f'最近一轮已报警代币详情：尝试 {info.get("attempted",0)} 个，成功 {info.get("succeeded",0)} 个，未成功 {info.get("failed",0)} 个；未成功的保留原缓存，过期后不参与小时榜。')
+    if snapshot.get('info_error'):st.caption('详情更新：'+snapshot['info_error'])
     st.caption('GMGN 的每轮耗时另计，遇到接口限流自动等待；不会因刷新调试页额外发起扫描。')
     st.subheader('GMGN 规则试算')
     st.caption('仅在本地验证输入是否符合当前规则，不写入真实警报，也不请求接口。')

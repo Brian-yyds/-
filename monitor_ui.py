@@ -195,7 +195,8 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
  .alert-panels{--panel-body:214px}
 }
 @media(max-width:640px){.screen-heading{flex-direction:row;align-items:center}.screen-heading>span{display:none}.screen-heading h1{font-size:18px!important}}
-.screen-heading h1{color:#a9bfcd}.news-heading h2{color:#a9bfcd}
+.screen-heading h1{color:#91aab9}.news-heading h2{color:#91aab9}
+.quick-price-name a.contract-link,.rank-table a.contract-link{color:#9fb5c2!important}
 .rank-table.price-returns th:nth-child(1){width:7%}.rank-table.price-returns th:nth-child(2){width:29%}.rank-table.price-returns th:nth-child(3){width:22%}.rank-table.price-returns th:nth-child(4){width:19%}.rank-table.price-returns th:nth-child(5){width:23%}
 .rank-table.oi-returns th:nth-child(1){width:7%}.rank-table.oi-returns th:nth-child(2){width:25%}.rank-table.oi-returns th:nth-child(3){width:19%}.rank-table.oi-returns th:nth-child(4){width:17%}.rank-table.oi-returns th:nth-child(5),.rank-table.oi-returns th:nth-child(6){width:16%}
 .rank-table.price-returns td,.rank-table.oi-returns td{font-size:11px}
@@ -346,11 +347,22 @@ def gmgn_combined_card(now=None):
     now=time.time() if now is None else now
     ranking=gmgn.tracking.ranking_snapshot(now)
     snapshot=store.get('gmgn_market',{})
-    status=''
+    status='';details=[];bad=[];limited=[]
+    for chain in gmgn.CHAINS:
+        state=snapshot.get('chains',{}).get(chain,{})
+        updated=state.get('updated',0);label=gmgn.CHAIN_LABELS[chain]
+        if state.get('error') or not updated or now-updated>180:bad.append(label)
+        if state.get('capped'):limited.append(label)
+        text=datetime.fromtimestamp(updated,ZONE).strftime('%m-%d %H:%M:%S') if updated else '尚无成功记录'
+        retry=max(0,state.get('retry_at',0)-now)
+        details.append(f'{label} 更新 {text}'+(f' · {state["error"]} · {retry:.0f}秒后重试' if state.get('error') else '')+(' · 候选覆盖有限' if state.get('capped') else ''))
     if not gmgn.configuration()['enabled']:status='已暂停'
-    elif not ranking['complete']:status=f"小时数据 {ranking['fresh']}/{ranking['total']}"
-    elif snapshot.get('retry_at',0)>now:status='接口重试中'
-    return ('<section class="gmgn-panel"><div class="rank-title"><h2>GMGN 监控</h2><span title="首次报警后10日内跟踪；北京时间每天最多一次；过期小时数据不入榜">'+html.escape(status)+'</span></div>'
+    else:
+        status=('/'.join(bad)+' 待恢复') if bad else '四链已更新'
+        if limited:status+=' · 候选有限'
+        if not ranking['complete']:status+=f" · 小时 {ranking['fresh']}/{ranking['total']}"
+    tooltip='；'.join(details)+'；首次报警后10日内跟踪；北京时间每天最多一次；过期小时数据不入榜'
+    return ('<section class="gmgn-panel"><div class="rank-title"><h2>GMGN 监控</h2><span title="'+html.escape(tooltip,quote=True)+'">'+html.escape(status)+'</span></div>'
             '<div class="gmgn-combined">'+gmgn_tracking_card(now)+gmgn_alarm_card()+'</div></section>')
 
 

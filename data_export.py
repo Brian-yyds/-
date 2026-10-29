@@ -84,7 +84,7 @@ def gmgn_data(context):
     ranking['rows']=[fields(r,'chain address first_alert expires_at last_alert volume_1h volume_observed')|{'token':token(r['token'])} for r in ranking['rows']]
     return dict(observed_at=snapshot.get('last_success'),heartbeat=snapshot.get('heartbeat'),
                 retry_at=snapshot.get('retry_at'),enabled=snapshot.get('enabled'),
-                chain_status={c:fields(v,'updated count capped') for c,v in snapshot.get('chains',{}).items()},
+                chain_status={c:fields(v,'updated count capped last_attempt retry_at error_code error_status failures duration pages batch_limit') for c,v in snapshot.get('chains',{}).items()},
                 chains=list(gmgn.CHAINS),watch_ranking=ranking,
                 rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume kol_count poll_seconds exclude_equities tracking_days daily_limit')|
                       dict(daily_timezone='Asia/Shanghai',tracking_anchor='first_alert',repeat_requires_new_breakout=True,
