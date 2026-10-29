@@ -158,7 +158,7 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 .live-line{font-size:11px;margin:8px 0 10px;gap:6px 10px}.live-line .pending-label{max-width:45%}
 .overview-strip,.rankings-grid{max-width:none}.overview-strip .quick-prices{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .overview-strip .quick-price{padding:8px 10px}.overview-strip .quick-price-value strong{font-size:clamp(1.1rem,2cqi,1.55rem)}
-.market-rankings.rankings-grid{--rank-row:34px;--rank-head:28px;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.market-rankings.rankings-grid{--rank-entry-height:112px;--panel-body:calc(2 * var(--rank-entry-height));grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}
 .market-rankings .rank-title{height:43px}.market-rankings .rank-title h2{font-size:16px!important}
 .alert-panels{--rank-row:34px;--rank-head:28px;--panel-body:248px;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.5fr);gap:10px;align-items:stretch}
 .alert-panels>.gmgn-panel{grid-column:auto}.alert-panels .rank-title{height:42px}.alert-panels .rank-title h2{font-size:16px!important}
@@ -184,15 +184,14 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 .desk-menu nav{position:absolute;right:0;top:34px;min-width:150px;background:#24313e;border:1px solid #39516c;border-radius:8px;padding:5px;box-shadow:0 8px 22px #0008}
 .desk-menu a{display:block;color:#b4c7d5!important;text-decoration:none!important;padding:9px;border-radius:4px}.desk-menu a:hover{background:#263c50}
 @media(min-width:1251px){
- .market-rankings.rankings-grid{--panel-body:max(198px,calc((100dvh - 520px) / 2));--rank-row:calc((var(--panel-body) - var(--rank-head)) / 5)}
- .alert-panels{--panel-body:max(248px,calc((100dvh - 520px) / 2))}
+ .alert-panels{--panel-body:max(300px,calc(100dvh - 744px))}
  .alert-panels .history-card{display:flex;flex-direction:column;height:var(--panel-body);box-sizing:border-box;overflow-y:auto}
  .alert-panels .history-card .gmgn-mini{flex:1;align-content:center}
  .alert-panels .gmgn-hour-table td{height:max(36px,calc((var(--panel-body) - 68px) / 7))}
 }
 @media(min-width:1251px) and (max-height:920px){
- .market-rankings.rankings-grid{--panel-body:178px}
- .alert-panels{--panel-body:214px}
+ .market-rankings.rankings-grid{--rank-entry-height:98px}
+ .alert-panels{--panel-body:260px}
 }
 @media(max-width:640px){.screen-heading{flex-direction:row;align-items:center}.screen-heading>span{display:none}.screen-heading h1{font-size:18px!important}}
 .screen-heading h1{color:#91aab9}.news-heading h2{color:#91aab9}
@@ -208,6 +207,40 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 [data-testid="stLayoutWrapper"]:has(>.st-key-sound-control){display:contents!important}
 [data-testid="stLayoutWrapper"]:has(.st-key-sound-events){display:none!important}
 @media(max-width:640px){.st-key-sound-control{right:48px;width:135px!important}.screen-heading h1{font-size:16px!important}}
+/* Two large entries replace the dense six-column table. Keep every rank in
+   the scroll region, with supporting returns below the primary 4h figure. */
+.ranking-list{list-style:none;margin:0;padding:0}
+.ranking-entry{height:var(--rank-entry-height);box-sizing:border-box;padding:10px 12px;border-bottom:1px solid #34424f;display:flex;flex-direction:column;justify-content:space-between;font-variant-numeric:tabular-nums}
+.market-rankings ol.ranking-list>li.ranking-entry{margin:0!important;padding:10px 12px!important}
+.ranking-entry:hover{background:#22313d}
+.ranking-main{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:8px;align-items:center;min-width:0}
+.ranking-name{display:flex;gap:6px;align-items:baseline;min-width:0;font-size:16px;font-weight:650;line-height:1.25}
+.ranking-name a.contract-link{color:#aac0cb!important;overflow-wrap:anywhere;line-height:1.3}
+.ranking-number{font-size:11px;color:#7c94a6;flex:none;font-weight:400}
+.ranking-primary{text-align:right;min-width:0;line-height:1.1}
+.ranking-primary small{display:block;font-size:11px;color:#8fa5b6;margin-bottom:3px}
+.ranking-primary strong{font-size:28px;font-weight:750;letter-spacing:-.04em;white-space:nowrap}
+.ranking-footer{display:flex;justify-content:space-between;align-items:baseline;gap:5px 10px;min-width:0}
+.ranking-turnover{display:flex;gap:5px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.ranking-turnover small{font-size:10px;color:#839cae;white-space:nowrap}.ranking-turnover b{font-size:19px;color:#b0c5cf;font-weight:650;white-space:nowrap}
+.ranking-secondary{display:flex;gap:4px;align-items:baseline;flex-wrap:wrap;justify-content:flex-end;min-width:0;font-size:12px}
+.ranking-secondary small{font-size:10px;color:#8299aa;white-space:nowrap}.ranking-secondary b{font-size:12px;font-weight:500;white-space:nowrap}
+.rank-scroll:focus-visible{outline:2px solid #809eaf;outline-offset:-2px}
+.alert-panels .rank-title h2{font-size:18px!important}
+.alarm-entry{padding:12px 14px}.alarm-entry-head{font-size:17px;line-height:1.4}.alarm-entry-head strong{font-size:24px}.alarm-entry-meta{font-size:12px;margin-top:7px}.alarm-entry-meta>span{font-size:13px}
+.alert-panels .gmgn-head{font-size:13px}.alert-panels .gmgn-head small{font-size:10px}
+.alert-panels .gmgn-hour-table th{font-size:11px;height:28px}.alert-panels .gmgn-hour-table td{font-size:14px}
+.alert-panels .gmgn-hour-table td:last-child{font-size:18px}
+.alert-panels .gmgn-hourly .gmgn-mini-name{font-size:14px!important}
+.alert-panels .gmgn-hourly .gmgn-mini .gmgn-logo{width:26px!important;height:26px!important}
+.alert-panels .gmgn-hourly .gmgn-mini{grid-template-columns:26px minmax(0,1fr)!important}
+.alert-panels .history-card .gmgn-mini-name{font-size:16px;line-height:1.35}.alert-panels .history-card .gmgn-mini-name small{font-size:11px}
+.alert-panels .history-card .gmgn-mini .gmgn-logo{width:32px;height:32px}
+.alert-panels .history-card .gmgn-mini{grid-template-columns:32px minmax(0,1fr);gap:5px 8px}
+.alert-panels .history-card .gmgn-mini-stats{font-size:12px;gap:4px 10px}.alert-panels .history-card .gmgn-mini-stats b{font-size:18px}
+.alert-panels .gmgn-alarm-time{font-size:12px;line-height:1.5}
+@container market-panel (max-width:950px){.ranking-primary strong{font-size:25px}.ranking-name{font-size:14px}.ranking-turnover b{font-size:17px}.ranking-footer{gap:4px 7px}.ranking-secondary{flex-direction:column;gap:1px;align-items:flex-end}.ranking-secondary b{font-size:11px}}
+@media(max-width:1250px){.alert-panels{--panel-body:360px}.alert-panels .history-card{height:var(--panel-body);overflow-y:auto}.alert-panels .gmgn-hour-table td{height:48px}}
 </style>'''
 
 
@@ -375,18 +408,18 @@ def ranking_card(rows,title,kind):
         value=r['oi_change'] if oi else r['price_change']
         approximate=oi and r['oi_basis']!='实时采样'
         tip=f"{r['oi_basis']} · 回看{r['oi_span']:.1f}分钟" if oi else f"回看{r['price_span']:.2f}分钟" if r.get('price_span') is not None else ''
-        def change_cell(value,tip,extra=''):
+        def change_stat(value,tip,label):
             css='up-accent' if value is not None and value>=0 else 'down-accent'
             text=f'{value:+.2f}%' if value is not None else '—'
-            return f'<td class="return-cell {css} {extra}" title="{html.escape(tip,quote=True)}">{text}</td>'
-        price_cell=change_cell(r.get('price_change'),'滚动近4小时价格涨跌幅') if oi else ''
-        three_day=change_cell(r.get('price_change_3d'),r.get('price_3d_basis','72小时历史基准待补齐'),'return-3d')
-        body.append(f'<tr><td>{index:02d}</td><td class="coin">{coin(r["symbol"],r["priority"],r.get("asset_type")=="stock",r.get("asset_type")=="commodity")}</td>'
-                    f'<td class="move {accent}" title="{html.escape(tip,quote=True)}">{"≈" if approximate else ""}{value:+.2f}%</td>'
-                    f'<td class="muted">{amount(r["quote"])}</td>'+price_cell+three_day+'</tr>')
-    headers='<th title="滚动近4小时价格涨跌幅">4h涨幅</th>' if oi else ''
-    content=('<table class="rank-table '+('oi-returns' if oi else 'price-returns')+'"><thead><tr><th>#</th><th>标的</th><th>'+label+'</th><th title="近4小时 USDT 成交额">成交额</th>'+headers+'<th title="最新价相对72小时前所在分钟开盘价；缺失不代填">近3日</th></tr></thead><tbody>'+''.join(body)+'</tbody></table>') if body else '<div class="empty">等待有效数据</div>'
-    return f'<section class="rank-card"><div class="rank-title"><h2 class="{accent}">{title}</h2><span title="默认显示前5名，滚动查看其余排名">4 小时 · 滚动更多</span></div><div class="rank-scroll">{content}</div></section>'
+            return f'<span class="ranking-secondary" title="{html.escape(tip,quote=True)}"><small>{label}</small><b class="{css}">{text}</b></span>'
+        price_stat=change_stat(r.get('price_change'),'滚动近4小时价格涨跌幅','4h价格') if oi else ''
+        three_day=change_stat(r.get('price_change_3d'),r.get('price_3d_basis','72小时历史基准待补齐'),'近3日')
+        body.append(f'<li class="ranking-entry" value="{index}"><div class="ranking-main">'
+                    f'<div class="ranking-name"><span class="ranking-number">{index:02d}</span>{coin(r["symbol"],r["priority"],r.get("asset_type")=="stock",r.get("asset_type")=="commodity")}</div>'
+                    f'<div class="ranking-primary" title="{html.escape(tip,quote=True)}"><small>{label}</small><strong class="{accent}">{"≈" if approximate else ""}{value:+.2f}%</strong></div></div>'
+                    '<div class="ranking-footer"><span class="ranking-turnover" title="近4小时 USDT 成交额"><small>4h成交额</small><b>'+amount(r['quote'])+'</b></span>'+price_stat+three_day+'</div></li>')
+    content='<ol class="ranking-list" aria-label="'+title+'排名">'+''.join(body)+'</ol>' if body else '<div class="empty">等待有效数据</div>'
+    return f'<section class="rank-card"><div class="rank-title"><h2 class="{accent}">{title}</h2><span title="默认显示前2名，其他排名在框内手动滚动查看">前2名 · 滚动更多</span></div><div class="rank-scroll" role="region" aria-label="{title}，手动滚动查看更多" tabindex="0">{content}</div></section>'
 
 
 def alarm_card(records,cfg):
