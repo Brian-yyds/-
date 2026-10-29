@@ -3,21 +3,17 @@ import json
 from pathlib import Path
 import streamlit as st
 import store
-import monitoring
 import gmgn_monitor as gmgn
 
 
 def snapshot():
     with store.connect() as con:
         gmgn.schema(con)
-        latest=dict(binance=con.execute('SELECT COALESCE(MAX(id),0) FROM spike_alerts').fetchone()[0],
-                    gmgn=con.execute('SELECT COALESCE(MAX(id),0) FROM gmgn_alerts').fetchone()[0])
-        gmgn_rows=con.execute('SELECT id,triggered,data FROM gmgn_alerts ORDER BY id DESC LIMIT 128').fetchall()
-    events=[dict(source='binance',id=r[0],time=r[1]) for r in monitoring.monitored_spike_alerts(store.spike_alerts(limit=128))]
-    for ident,stamp,raw in gmgn_rows:
-        if not gmgn.equities.equity_reason(json.loads(raw)):
-            events.append(dict(source='gmgn',id=ident,time=stamp))
-    return dict(version=1,latest=latest,events=events)
+        latest=con.execute('SELECT COALESCE(MAX(id),0) FROM gmgn_alerts').fetchone()[0]
+    # Use exactly the same three durable records as the visible GMGN alarm box.
+    # Ranking changes, last_seen refreshes and Binance events are not alarms.
+    events=[dict(source='gmgn',id=r['id'],time=r['triggered']) for r in gmgn.recent_alerts()]
+    return dict(version=2,latest=dict(gmgn=latest),events=events)
 
 
 def sound_control():
@@ -32,7 +28,7 @@ def sound_events():
     # This frame never receives credentials or invokes an API. A stable sibling
     # keeps its AudioContext and user activation while this signal frame updates.
     frame=('''<!doctype html><script>
-const channel=new BroadcastChannel('perp-workbench-alerts-v1');
+const channel=new BroadcastChannel('perp-workbench-gmgn-alerts-v2');
 const packet='''+payload+''';
 function send(){channel.postMessage(packet)}send();setInterval(send,1000);
 channel.onmessage=e=>{if(e.data?.requestSnapshot)send()};

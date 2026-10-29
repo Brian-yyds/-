@@ -2,46 +2,53 @@
 html,body{margin:0;background:transparent;color:#9bb2c2;font-family:"Microsoft YaHei",system-ui,sans-serif}
 button{height:28px;max-width:100%;padding:3px 9px;background:#21313b;color:#9fb9c8;border:1px solid #405866;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap}
 button[aria-pressed=true]{color:#a3c4b0;border-color:#526c60;background:#24372f}button:focus-visible{outline:2px solid #90afc6;outline-offset:-2px}
-</style><button id="sound" type="button" aria-pressed="false" title="开启后仅新警报响一次；币安双音，GMGN三音">🔕 开启警报声音</button>
+</style><button id="sound" type="button" aria-pressed="false" title="仅新GMGN警报响一次；行情、榜单、币安警报和开启开关均无声音">🔕 开启GMGN声音</button>
 <script>
 (()=>{
- const button=document.getElementById('sound'),channel=new BroadcastChannel('perp-workbench-alerts-v1');
- const storage='perp-workbench.sound.cursors.v1';
- let cursors=null,latest=null,enabled=false,context=null,busy=false;
- const queued=new Set(),lastPlayed={binance:0,gmgn:0};
- try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&['binance','gmgn'].every(k=>Number.isSafeInteger(saved[k])&&saved[k]>=0))cursors=saved}catch{}
- const save=()=>{try{sessionStorage.setItem(storage,JSON.stringify(cursors))}catch{}};
- function display(){button.textContent=enabled?'🔔 警报声音已开':'🔕 开启警报声音';button.setAttribute('aria-pressed',String(enabled))}
- function tone(source){
+ const button=document.getElementById('sound'),channel=new BroadcastChannel('perp-workbench-gmgn-alerts-v2');
+ const storage='perp-workbench.gmgn.sound.cursor.v2',playedStorage='perp-workbench.gmgn.sound.played.v2';
+ let cursor=null,latest=null,enabled=false,context=null,busy=false,queued=null,lastPlayed=0;
+ try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(Number.isSafeInteger(saved)&&saved>=0)cursor=saved}catch{}
+ const save=()=>{try{sessionStorage.setItem(storage,JSON.stringify(cursor))}catch{}};
+ function display(){button.textContent=enabled?'🔔 GMGN声音已开':'🔕 开启GMGN声音';button.setAttribute('aria-pressed',String(enabled))}
+ function tone(id){
    if(!enabled||context?.state!=='running')return;
-   const notes=source==='gmgn'?[440,554,659]:[660,494];
-   notes.forEach((frequency,i)=>{const osc=context.createOscillator(),gain=context.createGain(),t=context.currentTime+i*.21;
-     osc.type='sine';osc.frequency.value=frequency;gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(.11,t+.02);gain.gain.exponentialRampToValueAtTime(.001,t+.18);
-     osc.connect(gain);gain.connect(context.destination);osc.start(t);osc.stop(t+.2)});
-   document.body.dataset.lastSound=source;document.body.dataset.playedAt=String(Date.now());
+   const osc=context.createOscillator(),gain=context.createGain(),t=context.currentTime;
+   osc.type='sine';osc.frequency.value=554;gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(.09,t+.02);gain.gain.exponentialRampToValueAtTime(.001,t+.23);
+   osc.connect(gain);gain.connect(context.destination);osc.start(t);osc.stop(t+.25);
+   document.body.dataset.lastSound='gmgn';document.body.dataset.lastAlertId=String(id);document.body.dataset.playedAt=String(Date.now());
  }
- function flush(){
-   if(!enabled){queued.clear();return}
-   if(context?.state!=='running'){enabled=false;queued.clear();display();return}
-   if(busy)return;
-   const source=[...queued].find(s=>Date.now()-lastPlayed[s]>=5000);if(!source)return;
-   queued.delete(source);lastPlayed[source]=Date.now();tone(source);busy=true;setTimeout(()=>{busy=false;flush()},900);
+ async function flush(){
+   if(!enabled){queued=null;return}
+   if(context?.state!=='running'){enabled=false;queued=null;display();return}
+   if(busy||!queued||Date.now()-lastPlayed<5000)return;
+   const alarm=queued;queued=null;busy=true;
+   try{
+     const play=()=>{
+       if(!enabled||Date.now()/1000-alarm.time>120)return;
+       let played=0;try{played=Number(localStorage.getItem(playedStorage))||0}catch{}
+       if(alarm.id<=played)return;
+       try{localStorage.setItem(playedStorage,String(alarm.id))}catch{}
+       tone(alarm.id);lastPlayed=Date.now();
+     };
+     if(globalThis.navigator?.locks)await navigator.locks.request('perp-workbench-gmgn-sound',play);else play();
+   }finally{busy=false}
  }
  button.addEventListener('click',async()=>{
-   if(enabled){enabled=false;queued.clear();display();return}
+   if(enabled){enabled=false;queued=null;display();return}
    try{context??=new (window.AudioContext||window.webkitAudioContext)();await context.resume();enabled=context.state==='running';
-     cursors=latest?{...latest}:null;save();display();if(enabled)tone('binance');
+     cursor=latest===null?null:Math.max(cursor||0,latest);queued=null;save();display();
    }catch{enabled=false;button.textContent='点击重试声音';button.setAttribute('aria-pressed','false')}
  });
  channel.onmessage=event=>{
-   const p=event.data;if(p?.version!==1||!Array.isArray(p.events)||!p.latest||!['binance','gmgn'].every(k=>Number.isSafeInteger(p.latest[k])&&p.latest[k]>=0))return;
+   const p=event.data;if(p?.version!==2||!Array.isArray(p.events)||!Number.isSafeInteger(p.latest?.gmgn)||p.latest.gmgn<0)return;
    document.body.dataset.signalReady='true';
-   latest={...p.latest};if(!cursors){cursors={...latest};save();return}
-   for(const source of ['binance','gmgn']){
-     const previous=cursors[source];
-     if(enabled&&latest[source]>previous&&p.events.some(e=>e.source===source&&Number.isSafeInteger(e.id)&&e.id>previous&&e.id<=latest[source]&&Number.isFinite(e.time)&&Date.now()/1000-e.time>=0&&Date.now()/1000-e.time<=120))queued.add(source);
-     cursors[source]=latest[source];
-   }
+   latest=Math.max(latest||0,p.latest.gmgn);if(cursor===null){cursor=latest;save();return}
+   const previous=cursor;
+   const fresh=p.events.filter(e=>e.source==='gmgn'&&Number.isSafeInteger(e.id)&&e.id>previous&&e.id<=p.latest.gmgn&&Number.isFinite(e.time)&&Date.now()/1000-e.time>=0&&Date.now()/1000-e.time<=120);
+   if(enabled&&fresh.length){const alarm=fresh.reduce((a,b)=>a.id>b.id?a:b);if(!queued||alarm.id>queued.id)queued=alarm}
+   // Late snapshots and other tabs must never rewind the deduplication cursor.
+   cursor=Math.max(cursor,latest);
    save();flush();
  };
  setInterval(flush,1000);channel.postMessage({requestSnapshot:true});display();
