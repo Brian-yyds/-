@@ -1,8 +1,9 @@
-"""Five-minute BlockBeats Pro news ingestion, independent of page refreshes."""
+"""Budgeted BlockBeats Pro news ingestion, independent of page refreshes."""
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import json
+import math
 import os
 import time
 from urllib.parse import urlsplit, urljoin
@@ -11,14 +12,36 @@ import store
 from blockbeats_credentials import api_key
 
 BASE='https://api-pro.theblockbeats.info'
-INTERVAL=300
+INTERVAL=285
+REQUEST_WINDOW=31*86400
+REQUEST_CAP=9800
 MAX_PAGES=3
 MAX_ITEMS=500
 ZONE=timezone(timedelta(hours=8))
 
 
 def configuration():
-    return dict(enabled=True,auto_scroll=True,scroll_speed=12) | store.get('blockbeats_config',{})
+    cfg=dict(enabled=True) | store.get('blockbeats_config',{})
+    cfg.pop('scroll_speed',None)
+    return cfg | {'auto_scroll':False}
+
+
+def request_budget(now=None,reserve=False):
+    """Count every attempted page/retry; this is not the provider's balance."""
+    now=time.time() if now is None else now
+    with store.connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        con.execute('CREATE TABLE IF NOT EXISTS blockbeats_requests (id INTEGER PRIMARY KEY,attempted REAL NOT NULL)')
+        con.execute('DELETE FROM blockbeats_requests WHERE attempted<=?',(now-REQUEST_WINDOW,))
+        count,oldest=con.execute('SELECT COUNT(*),MIN(attempted) FROM blockbeats_requests').fetchone()
+        if reserve:
+            if count>=REQUEST_CAP:
+                raise NewsError('达到本机近31天调用上限，保留快讯缓存并等待额度窗口释放',max(INTERVAL,oldest+REQUEST_WINDOW-now+1))
+            con.execute('INSERT INTO blockbeats_requests(attempted) VALUES (?)',(now,))
+            count+=1
+    return dict(window_days=31,cap=REQUEST_CAP,attempted=count,remaining_local=max(0,REQUEST_CAP-count),
+                provider_remaining=None,provider_quota_verified=False,
+                planned_31_day_calls=math.ceil(REQUEST_WINDOW/INTERVAL))
 
 
 class PlainText(HTMLParser):
@@ -97,6 +120,7 @@ class Client:
         try:key=api_key()
         except (OSError,ValueError):raise NewsError('本机律动密钥暂不可读取，请使用保存密钥的Windows账户启动')
         if not key:raise NewsError('等待配置律动API Key')
+        request_budget(reserve=True)
         try:
             with self.session.get(BASE+'/v1/newsflash',params=dict(page=page,size=50,lang='cn'),
                                   headers={'api-key':key},timeout=(10,20),allow_redirects=False,stream=True) as response:

@@ -121,7 +121,7 @@ def blockbeats_news(context):
     health=store.get('blockbeats_health',{})
     return dict(source='律动 BlockBeats',poll_seconds=news.INTERVAL,enabled=bool(news.configuration()['enabled']),
                 observed_at=health.get('last_success'),next_poll_at=health.get('next_poll_at'),
-                coverage_limited=bool(health.get('coverage_limited')),
+                coverage_limited=bool(health.get('coverage_limited')),request_budget=news.request_budget(),
                 items=[fields(row,'id title content link published_at published_text observed') for row in news.recent(100)])
 
 

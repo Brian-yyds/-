@@ -29,14 +29,14 @@ class FakeClient:
         return self.rows
 
 
-def test_poll_every_five_minutes_survives_restart_and_deduplicates(isolated):
+def test_budgeted_poll_interval_survives_restart_and_deduplicates(isolated):
     client=FakeClient();news.Monitor(client).step(NOW)
     assert client.calls==[1] and len(news.recent())==1
     assert news.recent()[0]['content']=='第一段\n第二段'
-    news.Monitor(client).step(NOW+299)
+    news.Monitor(client).step(NOW+news.INTERVAL-1)
     assert client.calls==[1]
-    client.rows=[news.normalize(raw(content='<p>修订内容</p>'),NOW+300)]
-    news.Monitor(client).step(NOW+300)
+    client.rows=[news.normalize(raw(content='<p>修订内容</p>'),NOW+news.INTERVAL)]
+    news.Monitor(client).step(NOW+news.INTERVAL)
     assert len(client.calls)==2 and len(news.recent())==1
     assert news.recent()[0]['content']=='修订内容'
 
@@ -101,7 +101,8 @@ def test_export_is_allowlisted_and_contains_news_timestamps(isolated):
     store.put('blockbeats_config',dict(api_key='PRIVATE_NEWS_KEY'))
     packet=data_export.build_packet('test',now=NOW)
     module=packet['modules']['blockbeats_news']
-    assert module['status']=='ok' and module['data']['poll_seconds']==300
+    assert module['status']=='ok' and module['data']['poll_seconds']==285
+    assert module['data']['request_budget']['provider_remaining'] is None
     assert module['data']['items'][0]['published_text']=='2026-10-29 12:00:00'
     assert 'PRIVATE_NEWS_KEY' not in data_export.encode(packet).decode()
 
@@ -114,7 +115,7 @@ class Response:
     def iter_content(self,size):yield json.dumps(dict(status=0,data=dict(page=1,data=[raw()]))).encode()
 
 
-def test_https_header_only_credentials_and_redirects_disabled(monkeypatch):
+def test_https_header_only_credentials_and_redirects_disabled(isolated,monkeypatch):
     from types import SimpleNamespace
     seen={};client=news.Client()
     def get(url,**kwargs):seen.update(url=url,**kwargs);return Response()
@@ -127,3 +128,40 @@ def test_https_header_only_credentials_and_redirects_disabled(monkeypatch):
     client.session=SimpleNamespace(get=lambda *a,**kw:Response(429,{'Retry-After':'900'}))
     with pytest.raises(news.NewsError) as error:client.page(1)
     assert error.value.wait==900
+    assert news.request_budget()['attempted']==2  # Failed attempts also consume the local budget.
+
+
+def test_rolling_budget_blocks_before_network_and_releases_after_31_days(isolated,monkeypatch):
+    from types import SimpleNamespace
+    with store.connect() as con:
+        con.execute('CREATE TABLE blockbeats_requests (id INTEGER PRIMARY KEY,attempted REAL NOT NULL)')
+        con.executemany('INSERT INTO blockbeats_requests(attempted) VALUES (?)',[(NOW,)]*news.REQUEST_CAP)
+    monkeypatch.setattr(news,'api_key',lambda:'test-only-news-key')
+    client=news.Client()
+    client.session=SimpleNamespace(get=lambda *a,**kw:(_ for _ in ()).throw(AssertionError('budget must block network')))
+    with pytest.raises(news.NewsError) as error:client.page(1)
+    assert error.value.wait>=news.REQUEST_WINDOW
+    assert news.request_budget()['remaining_local']==0
+    assert news.request_budget(now=NOW+news.REQUEST_WINDOW,reserve=True)['attempted']==1
+    assert news.request_budget(now=NOW+news.REQUEST_WINDOW)['provider_quota_verified'] is False
+
+
+def test_concurrent_budget_reservations_cannot_exceed_cap(isolated,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    monkeypatch.setattr(news,'REQUEST_CAP',5)
+    news.request_budget()  # Initialize the temporary WAL database before competing writers.
+    def reserve(_):
+        try:news.request_budget(reserve=True);return True
+        except news.NewsError:return False
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        assert sum(pool.map(reserve,range(12)))==5
+    assert news.request_budget()['attempted']==5
+
+
+def test_legacy_auto_scroll_setting_is_retired(isolated):
+    store.put('blockbeats_config',dict(enabled=True,auto_scroll=True,scroll_speed=40))
+    assert news.configuration()['auto_scroll'] is False
+    assert 'scroll_speed' not in news.configuration()
+    frame=blockbeats_ui.frame_html()
+    assert '手动阅读' in frame and '每4分45秒获取' in frame
+    assert 'function tick' not in frame and 'id="toggle"' not in frame

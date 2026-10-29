@@ -46,12 +46,12 @@ def rules():
     nc=news.configuration()
     with st.form('blockbeats_rules'):
         enabled=st.checkbox('启用律动中文快讯',value=bool(nc['enabled']))
-        auto=st.checkbox('信息流默认自动滚动',value=bool(nc['auto_scroll']))
-        speed=st.slider('快讯滚动速度（像素/秒）',min_value=4,max_value=40,value=int(nc['scroll_speed']))
-        st.caption('后台每5分钟读取一次官方API；浏览器滚动及刷新不消耗额外接口请求。鼠标悬停、键盘阅读或手动滚动时暂停，可在快讯框直接暂停/继续。')
+        st.caption('快讯固定为手动阅读。后台每4分45秒获取，按31天连续运行约9,398次；余量留给重试及补页，每次API请求均计入本机近31天9,800次上限。')
+        budget=news.request_budget()
+        st.caption(f'本机近31天已记录 {budget["attempted"]:,} 次尝试；不含启用计数前及其他客户端的调用。官方接口不提供当前剩余额度，官网需登录核实；这里不是官方余额。')
         if st.form_submit_button('保存快讯设置'):
-            store.put('blockbeats_config',dict(enabled=enabled,auto_scroll=auto,scroll_speed=speed))
-            st.success('已保存；默认滚动设置用于新的阅读会话，当前会话可用快讯框按钮调整。')
+            store.put('blockbeats_config',dict(enabled=enabled,auto_scroll=False))
+            st.success('已保存，快讯保持手动阅读。')
 
 
 def display_settings():

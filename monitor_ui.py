@@ -168,6 +168,8 @@ a.contract-link:hover{color:#b4ed78!important;text-decoration:underline!importan
 .alert-panels .gmgn-hour-scroll{height:calc(var(--panel-body) - 44px)}
 .volume-bars{min-width:840px}.volume-value,.volume-all-value{font-size:clamp(8px,1cqi,10px)}.volume-day>span{font-size:clamp(8px,.95cqi,9px)}
 .st-key-dashboard{margin-top:0}.st-key-dashboard [data-testid="stColumn"]{min-width:0}
+.st-key-news-column [data-testid="stElementContainer"]:has(>iframe[title="律动快讯信息流"]){height:max(600px,calc(100dvh - 150px))!important;flex-basis:auto!important}
+.st-key-news-column iframe[title="律动快讯信息流"]{height:100%!important}
 @media(max-width:1250px){.st-key-dashboard [data-testid="stHorizontalBlock"]{flex-direction:column}.st-key-dashboard [data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important}}
 @container market-panel (max-width:600px){.market-rankings.rankings-grid{grid-template-columns:1fr}.alert-panels{grid-template-columns:1fr}.live-line .pending-label{max-width:none}}
 </style>'''
@@ -419,11 +421,12 @@ def monitor_page():
     st.markdown('<div class="screen-heading"><h1>全市场异动监控</h1><span>币安 USDT · '+scope+'</span></div>',unsafe_allow_html=True)
     from blockbeats_ui import news_panel
     with st.container(key='dashboard'):
-        market,news=st.columns([3.4,1.2],gap='medium',vertical_alignment='top')
+        news,market=st.columns([1.55,3.05],gap='medium',vertical_alignment='top')
+        with news:
+            with st.container(key='news-column'):
+                news_panel()
         with market:
             board(view.get('scope','全市场'),view.get('search',''),view.get('oi_direction','增仓'),view.get('asset_scope','全部'))
-        with news:
-            news_panel()
 
 
 def settings_page():
