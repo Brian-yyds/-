@@ -1,0 +1,49 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent;color:#9bb2c2;font-family:"Microsoft YaHei",system-ui,sans-serif}
+button{height:28px;max-width:100%;padding:3px 9px;background:#21313b;color:#9fb9c8;border:1px solid #405866;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap}
+button[aria-pressed=true]{color:#a3c4b0;border-color:#526c60;background:#24372f}button:focus-visible{outline:2px solid #90afc6;outline-offset:-2px}
+</style><button id="sound" type="button" aria-pressed="false" title="开启后仅新警报响一次；币安双音，GMGN三音">🔕 开启警报声音</button>
+<script>
+(()=>{
+ const button=document.getElementById('sound'),channel=new BroadcastChannel('perp-workbench-alerts-v1');
+ const storage='perp-workbench.sound.cursors.v1';
+ let cursors=null,latest=null,enabled=false,context=null,busy=false;
+ const queued=new Set(),lastPlayed={binance:0,gmgn:0};
+ try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&['binance','gmgn'].every(k=>Number.isSafeInteger(saved[k])&&saved[k]>=0))cursors=saved}catch{}
+ const save=()=>{try{sessionStorage.setItem(storage,JSON.stringify(cursors))}catch{}};
+ function display(){button.textContent=enabled?'🔔 警报声音已开':'🔕 开启警报声音';button.setAttribute('aria-pressed',String(enabled))}
+ function tone(source){
+   if(!enabled||context?.state!=='running')return;
+   const notes=source==='gmgn'?[440,554,659]:[660,494];
+   notes.forEach((frequency,i)=>{const osc=context.createOscillator(),gain=context.createGain(),t=context.currentTime+i*.21;
+     osc.type='sine';osc.frequency.value=frequency;gain.gain.setValueAtTime(0,t);gain.gain.linearRampToValueAtTime(.11,t+.02);gain.gain.exponentialRampToValueAtTime(.001,t+.18);
+     osc.connect(gain);gain.connect(context.destination);osc.start(t);osc.stop(t+.2)});
+   document.body.dataset.lastSound=source;document.body.dataset.playedAt=String(Date.now());
+ }
+ function flush(){
+   if(!enabled){queued.clear();return}
+   if(context?.state!=='running'){enabled=false;queued.clear();display();return}
+   if(busy)return;
+   const source=[...queued].find(s=>Date.now()-lastPlayed[s]>=5000);if(!source)return;
+   queued.delete(source);lastPlayed[source]=Date.now();tone(source);busy=true;setTimeout(()=>{busy=false;flush()},900);
+ }
+ button.addEventListener('click',async()=>{
+   if(enabled){enabled=false;queued.clear();display();return}
+   try{context??=new (window.AudioContext||window.webkitAudioContext)();await context.resume();enabled=context.state==='running';
+     cursors=latest?{...latest}:null;save();display();if(enabled)tone('binance');
+   }catch{enabled=false;button.textContent='点击重试声音';button.setAttribute('aria-pressed','false')}
+ });
+ channel.onmessage=event=>{
+   const p=event.data;if(p?.version!==1||!Array.isArray(p.events)||!p.latest||!['binance','gmgn'].every(k=>Number.isSafeInteger(p.latest[k])&&p.latest[k]>=0))return;
+   document.body.dataset.signalReady='true';
+   latest={...p.latest};if(!cursors){cursors={...latest};save();return}
+   for(const source of ['binance','gmgn']){
+     const previous=cursors[source];
+     if(enabled&&latest[source]>previous&&p.events.some(e=>e.source===source&&Number.isSafeInteger(e.id)&&e.id>previous&&e.id<=latest[source]&&Number.isFinite(e.time)&&Date.now()/1000-e.time>=0&&Date.now()/1000-e.time<=120))queued.add(source);
+     cursors[source]=latest[source];
+   }
+   save();flush();
+ };
+ setInterval(flush,1000);channel.postMessage({requestSnapshot:true});display();
+})();
+</script></html>

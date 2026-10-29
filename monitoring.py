@@ -151,6 +151,8 @@ def build_rows(cfg=None, now=None, scope='focus'):
     symbols=market_symbols(cfg) if scope=='market' else store.filter_stock_symbols(cfg['watchlist'],cfg)
     oi_map,bars_map = store.live_inputs(symbols, now,oi_window_minutes=cfg['window_minutes'])
     baselines=store.price_baselines({s:ticks.get(s,{}).get('event_time',int(now*1000)) for s in symbols},RULE_WINDOW_MINUTES)
+    import price_history
+    three_day_bases=price_history.baselines({s:ticks.get(s,{}).get('event_time',0) for s in symbols})
     rows = []
     for symbol in symbols:
         tick = ticks.get(symbol, {})
@@ -172,6 +174,10 @@ def build_rows(cfg=None, now=None, scope='focus'):
         row['base_time'],row['base_price']=base if base else (None,None)
         row['price_span']=(tick['event_time']-base[0])/60000 if base and fresh else None
         row['price_change']=(price/base[1]-1)*100 if fresh and base and base[1]>0 else None
+        base_3d=three_day_bases.get(symbol)
+        row['price_change_3d']=(price/base_3d[1]-1)*100 if fresh and base_3d else None
+        row['base_3d_time'],row['base_3d_price']=base_3d if base_3d else (None,None)
+        row['price_3d_basis']='72小时前所在分钟开盘价' if base_3d else '72小时历史基准待补齐 / 未上市或休市'
         row.update(oi_metrics(oi_map.get(symbol,[]),int(now*1000),cfg["window_minutes"],180000 if scope=='market' and symbol not in cfg['watchlist'] else 40000))
         row["oi_usdt"] = row["oi"]*row["mark"] if row["oi"] is not None and fresh else None
         row["hits"] = evaluate(row,effective_rule(cfg,symbol))

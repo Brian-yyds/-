@@ -57,7 +57,8 @@ def binance_market(context):
     rows = monitoring.build_rows(cfg, now=context['now'], scope='market')
     row_fields = ('symbol asset_type priority price price_fresh price_time price_change '
                   'price_basis base_time base_price price_span quote minute_ready '
-                  'oi oi_change oi_span oi_basis oi_time oi_usdt change24h quote24h mark')
+                  'oi oi_change oi_span oi_basis oi_time oi_usdt change24h quote24h mark '
+                  'price_change_3d base_3d_time base_3d_price price_3d_basis')
     public_rows = [fields(row, row_fields) for row in rows]
     lookup = {r['symbol']: r for r in public_rows}
     ranks = {kind: [r['symbol'] for r in monitoring.ranked(rows, kind)]

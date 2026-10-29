@@ -1,17 +1,17 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#e7edf5;background:#0b1017}
-.news-frame{height:100%;display:flex;flex-direction:column;background:#101a26;border:1px solid #304d64;border-radius:12px;overflow:hidden}
-.news-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid #263b4f;background:linear-gradient(115deg,#152c3b,#111d2a)}
-.news-brand{display:flex;gap:8px;align-items:center}.news-mark{font-weight:850;font-size:18px;letter-spacing:-2px;color:#96d7ec;background:#203f50;border:1px solid #396176;border-radius:7px;padding:4px 7px}.news-heading h2{font-size:17px;margin:0;font-weight:750}.news-heading small{display:block;color:#8aa2b7;font-size:10px;margin-top:3px;letter-spacing:.07em}
-.reading-mode{font-size:11px;color:#94b6c8;white-space:nowrap}a:focus-visible,button:focus-visible{outline:2px solid #a2dfed;outline-offset:3px}
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#b8c7d1;background:#141b23}
+.news-frame{height:100%;display:flex;flex-direction:column;background:#1c2934;border:1px solid #3a4c5c;border-radius:12px;overflow:hidden}
+.news-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid #263b4f;background:linear-gradient(115deg,#22343f,#1c2a35)}
+.news-brand{display:flex;gap:8px;align-items:center}.news-mark{font-weight:850;font-size:18px;letter-spacing:-2px;color:#91b5c7;background:#203f50;border:1px solid #396176;border-radius:7px;padding:4px 7px}.news-heading h2{font-size:17px;margin:0;font-weight:750}.news-heading small{display:block;color:#8aa2b7;font-size:10px;margin-top:3px;letter-spacing:.07em}
+.reading-mode{font-size:11px;color:#94b6c8;white-space:nowrap}a:focus-visible,button:focus-visible{outline:2px solid #8db4c6;outline-offset:3px}
 .news-title-row{display:flex;align-items:baseline;gap:8px}.news-title-row .news-title{flex:1;min-width:0}.news-expand{flex:none;border:1px solid #37546a;background:#152a3a;color:#a6d9e8;border-radius:5px;font-size:11px;line-height:1.6;padding:1px 7px;cursor:pointer}.news-expand:hover{background:#254255}.news-content[hidden]{display:none}
-.news-state{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 14px;color:#88a6b9;font-size:10px;border-bottom:1px solid #213447}.news-state b{font-weight:500;color:#9acfb7}.news-state.is-delayed b{color:#ffc18a}
-.news-scroll{flex:1;min-height:0;overflow:auto;padding:0 14px;scrollbar-width:thin;scrollbar-color:#355369 #101a26;overscroll-behavior:contain}
+.news-state{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 14px;color:#88a6b9;font-size:10px;border-bottom:1px solid #213447}.news-state b{font-weight:500;color:#9acfb7}.news-state.is-delayed b{color:#c5af88}
+.news-scroll{flex:1;min-height:0;overflow:auto;padding:0 14px;scrollbar-width:thin;scrollbar-color:#355369 #1c2934;overscroll-behavior:contain}
 .news-item{position:relative;padding:16px 0 16px 15px;border-bottom:1px solid #233448}.news-item::before{content:"";position:absolute;left:0;top:21px;width:5px;height:5px;border-radius:50%;background:#638da6}
 .news-item:first-child::before{background:#a4dfeb;box-shadow:0 0 0 3px #254352}.news-time{display:block;color:#8aa2b7;font-size:11px;font-variant-numeric:tabular-nums;margin-bottom:7px}
-.news-title{font-size:15px;line-height:1.6;font-weight:650;text-decoration:none;color:#e5edf6;overflow-wrap:anywhere}.news-title:hover{color:#9de0ed}.news-content{font-size:13px;color:#aebfd0;line-height:1.85;margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere}
+.news-title{font-size:15px;line-height:1.6;font-weight:650;text-decoration:none;color:#b4c6d1;overflow-wrap:anywhere}.news-title:hover{color:#98b9c8}.news-content{font-size:13px;color:#9dafbd;line-height:1.85;margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere}
 .news-footer{border-top:1px solid #293f52;padding:9px 14px;color:#7895aa;font-size:10px;line-height:1.5;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.news-empty{color:#8fa7bc;font-size:13px;line-height:1.8;padding:30px 0}.news-footer strong{color:#aec9d8;font-weight:500}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style></head><body><section class="news-frame" aria-label="律动快讯信息流">

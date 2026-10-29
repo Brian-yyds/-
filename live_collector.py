@@ -197,6 +197,8 @@ class Monitor:
         threading.Thread(target=self.stream,daemon=True).start()
         scanner=MarketScanner(self)
         threading.Thread(target=scanner.run,daemon=True).start()
+        from price_history import Monitor as ReturnHistory
+        threading.Thread(target=ReturnHistory(scanner.get).run,daemon=True).start()
         last_universe,last_prune=time.time(),0
         with ThreadPoolExecutor(max_workers=4) as pool:
             while True:
