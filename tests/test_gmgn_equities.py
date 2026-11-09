@@ -95,7 +95,7 @@ def test_catalogs_validate_chain_and_malformed_data_does_not_clear_cache(isolate
 
 def test_current_rules_and_public_contract_keep_alarm_scope_local(isolated):
     assert sftp_sync.DEFAULTS['interval_seconds']==60
-    assert gmgn.DEFAULTS['graduate_volume']==150000
+    assert gmgn.DEFAULTS['graduate_volume']==200000
     assert gmgn.DEFAULTS['kol_count']==1
     assert gmgn.DEFAULTS['other_volume']==1000000
     store.put('gmgn_config',dict(exclude_equities=False))

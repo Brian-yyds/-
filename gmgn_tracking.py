@@ -56,8 +56,9 @@ def record_scan(chain,tokens,cfg,stamp):
             if token.get('chain')!=chain or not g.valid_address(chain,token.get('address')) or g.equities.equity_reason(token):continue
             chain_key,address=identity(chain,token['address']);token['address']=address
             watch=con.execute('SELECT first_alert,expires_at,initial_rule,last_seen FROM gmgn_watch WHERE chain=? AND address=?',(chain_key,address)).fetchone()
-            if watch and (stamp>=watch[1] or stamp<watch[3]):continue
-            followup=bool(watch and watch[2] in ('今日毕业放量','毕业代币再次放量'))
+            if watch and stamp>=watch[3]:g.market_caps.observe(con,token,stamp)
+            if watch and (stamp<watch[3] or stamp>=watch[1] and not g.extra_age_eligible(token,cfg,stamp)):continue
+            followup=bool(watch and stamp<watch[1] and watch[2] in ('今日毕业放量','毕业代币再次放量'))
             rule=g.reason(token,cfg,stamp,followup=followup)
             old=con.execute('SELECT active,last_true,below_since,observed FROM gmgn_episodes WHERE chain=? AND address=? ORDER BY observed DESC LIMIT 1',(chain_key,address)).fetchone()
             if old and stamp<old[3]:continue
@@ -81,7 +82,7 @@ def record_scan(chain,tokens,cfg,stamp):
             else:
                 valid=token.get('volume') is not None and g.launch_kind(token)!='unknown'
                 if active and valid:
-                    threshold=cfg['graduate_volume'] if followup or g.launch_kind(token)=='launchpad' else cfg['other_volume']
+                    threshold=g.episode_threshold(token,cfg,stamp,followup)
                     if token['volume']>threshold:below=None
                     else:
                         below=below if below is not None and old and stamp-old[3]<=120 else stamp
@@ -91,7 +92,12 @@ def record_scan(chain,tokens,cfg,stamp):
             con.execute('INSERT OR REPLACE INTO gmgn_episodes VALUES (?,?,?,?,?,?,?)',(chain_key,address,'volume',int(active),last_true,below,stamp))
             con.execute('UPDATE gmgn_watch SET token=?,last_seen=? WHERE chain=? AND address=?',
                         (json.dumps(token,ensure_ascii=False),stamp,chain_key,address))
+            if not watch and sent:g.market_caps.observe(con,token,stamp)
         con.execute('DELETE FROM gmgn_alerts WHERE acknowledged=1 AND triggered<? AND id NOT IN (SELECT id FROM gmgn_alerts ORDER BY triggered DESC,id DESC LIMIT 3)',(stamp-30*86400,))
+        # The originating alarm, its immutable proof and cross-source match
+        # commit together; a crash cannot leave a half-recorded match.
+        from web3_signals import record_gmgn_scan
+        record_gmgn_scan(chain,tokens,stamp,con=con,cfg=cfg)
 
 
 def watch_rows(now=None):
@@ -157,7 +163,7 @@ def refresh_info(client,cfg,now=None):
             if observed is None or not attempted-1<=observed<=time.time()+2:continue
             try:token,volume=parse_info(item.get('data'),key[0],key[1],observed)
             except (TypeError,ValueError):continue
-            record_scan(key[0],[token],cfg,observed)
+            g.record_scan(key[0],[token],cfg,observed)
             report['succeeded']+=1
             with store.connect() as con:
                 if volume is not None:

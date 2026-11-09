@@ -29,7 +29,7 @@ def test_sampling_does_not_fetch_orderbook(isolated):
     assert '/fapi/v1/depth' not in calls
 
 
-def test_main_cycle_only_creates_spike_alarms_even_if_legacy_options_enabled(isolated,monkeypatch):
+def test_top20_spike_requires_fresh_turnover_even_if_legacy_options_enabled(isolated,monkeypatch):
     store.put('settings',store.DEFAULTS|{'watchlist':['XUSDT'],'quiet_mode':False})
     store.put('ai_config',{'auto':True,'profiles':[]})
     m=Monitor()
@@ -63,7 +63,7 @@ def test_main_cycle_only_creates_spike_alarms_even_if_legacy_options_enabled(iso
     def finish(*args): raise EndCycle()
     monkeypatch.setattr(live_collector.time,'sleep',finish)
     with pytest.raises(EndCycle): m.run()
-    assert len(store.spike_alerts())==1
+    assert not store.spike_alerts()
     assert not store.recent_alerts()
     assert all('worker' not in name for name in threads)
     with store.connect() as con:

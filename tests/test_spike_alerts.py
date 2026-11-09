@@ -33,13 +33,14 @@ def test_bootstrap_uses_only_whole_completed_minutes_in_window():
 
 def isolated_monitor(tmp_path,monkeypatch):
     monkeypatch.setattr(store,'DB',tmp_path/'spikes.sqlite')
+    store.put('settings',dict(spike_enabled=True,spike_top20_only=False,spike_up_pct=10.,spike_down_pct=10.))  # Explicitly test the retained legacy engine.
     return Monitor()
 
 
 def test_emergency_does_not_depend_on_hourly_rule_gates(tmp_path,monkeypatch):
     monitor=isolated_monitor(tmp_path,monkeypatch)
     now=int(time.time()*1000)-1000
-    store.put('settings',store.DEFAULTS|{'rule_mode':'OI且价格','min_quote':1e20,
+    store.put('settings',store.DEFAULTS|{'spike_enabled':True,'spike_top20_only':False,'spike_up_pct':10.,'spike_down_pct':10.,'rule_mode':'OI且价格','min_quote':1e20,
                 'cooldown_minutes':1440,'overrides':{'BTCUSDT':{'enabled':False}}})
     monitor.spike_prices['BTCUSDT'].append((now-60000,100))
     monitor.inspect_spike('BTCUSDT',110,now)

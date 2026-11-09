@@ -1,0 +1,31 @@
+# Linux/systemd template. Paths/user must be verified on the target host first.
+[Unit]
+Description=Perpetual market and on-chain monitor collector
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=perp-monitor
+Group=perp-monitor
+WorkingDirectory=/opt/perp-workbench/current
+EnvironmentFile=/etc/perp-workbench/collector.env
+Environment=PYTHONUTF8=1
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/opt/perp-workbench/node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/perp-workbench/venv/bin/python /opt/perp-workbench/current/launch.py start --no-browser
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=45
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/perp-workbench/shared/user_data
+
+[Install]
+WantedBy=multi-user.target

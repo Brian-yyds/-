@@ -83,32 +83,27 @@ def start(no_browser=False):
                 raise RuntimeError("8501已被使用；请先停止已有服务，避免重复启动")
         except requests.exceptions.RequestException:
             pass
-    children = []
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    from monitor_migrations import apply as apply_monitor_policy
+    apply_monitor_policy()
+    from service_supervisor import Supervisor
+    supervisor = None
     try:
         cmds = {
             "collector": [sys.executable, str(ROOT / "live_collector.py")],
             "gmgn": [sys.executable, str(ROOT / "gmgn_monitor.py")],
-            "volume": [sys.executable, str(ROOT / "volume_monitor.py")],
+            "signals": [sys.executable, str(ROOT / "web3_signals.py")],
             "news": [sys.executable, str(ROOT / "blockbeats_monitor.py")],
             "export": [sys.executable, str(ROOT / "export_worker.py")],
             "workbench": [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
                           "--server.address", "127.0.0.1", "--server.port", "8501",
                           "--server.headless", "true", "--browser.gatherUsageStats", "false"],
         }
-        for name, cmd in cmds.items():
-            log = (USER / f"{name}.log").open("a", encoding="utf-8")
-            env = os.environ.copy()
-            env["PYTHONUTF8"] = "1"
-            child = subprocess.Popen(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, creationflags=flags, env=env)
-            log.close()
-            children.append(child)
-        (USER / "runtime.json").write_text(json.dumps({"pids": [p.pid for p in children]}), encoding="utf-8")
+        supervisor = Supervisor(cmds)
+        supervisor.start()
         print("永续异动监控 http://127.0.0.1:8501", flush=True)
         print("关闭浏览器后采集仍运行；按 Ctrl+C 停止全部服务。电脑需要保持运行和联网。", flush=True)
         for _ in range(60):
-            if any(c.poll() is not None for c in children):
-                raise RuntimeError("服务提前退出，请查看 user_data 中对应日志")
+            if not supervisor.tick():return
             try:
                 if requests.get("http://127.0.0.1:8501/_stcore/health", timeout=1).ok:
                     break
@@ -120,24 +115,16 @@ def start(no_browser=False):
         if not no_browser:
             webbrowser.open("http://127.0.0.1:8501")
         while True:
-            if any(c.poll() is not None for c in children):
-                record = USER / "runtime.json"
-                if record.exists() and json.loads(record.read_text(encoding="utf-8")).get("stopping"):
-                    return
-                raise RuntimeError("服务退出，请检查日志")
+            try:
+                if not supervisor.tick():return
+            except Exception:
+                # A diagnostic/SQLite failure must not terminate healthy feeds.
+                print('巡检暂不可用；保留现有采集进程，稍后重试。',flush=True)
             time.sleep(2)
     except KeyboardInterrupt:
         print("正在停止服务…", flush=True)
     finally:
-        for child in children:
-            if child.poll() is None:
-                child.terminate()
-        for child in children:
-            try:
-                child.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                child.kill()
-        (USER / "runtime.json").unlink(missing_ok=True)
+        if supervisor:supervisor.close()
 
 
 def stop():

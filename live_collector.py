@@ -32,6 +32,8 @@ class Monitor:
         self.spike_active=store.spike_states()
         self.spike_config = store.settings()
         self.spike_config_time = time.time()
+        self.spike_top_updated=0
+        self.spike_top_symbols=[]
 
     def inspect_spike(self,symbol,price,event_time):
         # Called by the price/kline stream, independently of the 10s OI loop.
@@ -41,6 +43,15 @@ class Monitor:
             if time.time()-self.spike_config_time>=3:
                 self.spike_config=store.settings()
                 self.spike_config_time=time.time()
+            if self.spike_config.get('spike_enabled') is False:
+                return
+            top_only=self.spike_config.get('spike_top20_only',False)
+            if top_only:
+                from spike_monitor import top_symbols
+                if time.time()-self.spike_top_updated>=3:
+                    self.spike_top_symbols=top_symbols(self.ticks,self.market_valid)
+                    self.spike_top_updated=time.time()
+                if symbol not in self.spike_top_symbols:return
             if not self.spike_config.get('include_stocks',False) and symbol in self.stock_symbols:
                 return
             observations=self.spike_prices[symbol]
@@ -56,9 +67,12 @@ class Monitor:
                                                 ("急跌",-metrics['down_pct'],metrics['down_reference'])]:
                 active=self.spike_active.get((symbol,direction),False)
                 threshold=float(self.spike_config['spike_up_pct' if direction=='急涨' else 'spike_down_pct'])
-                if not active and change>=threshold-1e-9:
+                exceeded=change>threshold+1e-9 if top_only else change>=threshold-1e-9
+                if not active and exceeded:
                     signed_change=change if direction=="急涨" else -change
                     reference=reference|{'basis':reference['basis']+f' · 阈值{threshold:g}%'}
+                    if top_only:
+                        reference['basis']+=f' · 24h成交额前20 · 触发排名{self.spike_top_symbols.index(symbol)+1}'
                     created=store.set_spike_episode(symbol,direction,True,event_time,signed_change,reference,price)
                     self.spike_active[(symbol,direction)]=True
                     if created:
@@ -127,7 +141,7 @@ class Monitor:
                                                 "quote24h":float(t["q"]),"event_time":int(t["E"])}
                                             stamp=int(t['E'])
                                             price_pending.setdefault((symbol,stamp//5000),(symbol,stamp//5000,stamp,float(t['c'])))
-                                            if symbol in self.market_valid and symbol not in self.spike_config.get('market_excluded',['BTCUSDT']):
+                                            if symbol in self.market_valid and (self.spike_config.get('spike_top20_only') or symbol not in self.spike_config.get('market_excluded',['BTCUSDT'])):
                                                 spike_ticks.append((symbol,float(t['c']),int(t['E'])))
                                 for spike_tick in spike_ticks:
                                     self.inspect_spike(*spike_tick)
@@ -139,7 +153,7 @@ class Monitor:
                                     cache=self.spike_bars.setdefault(data['s'],{})
                                     cache[int(k['t'])]=pending[(data['s'],k['t'])][1:]
                                     self.spike_bars[data['s']]={t:r for t,r in cache.items() if t>=int(k['t'])-7200000}
-                                if data['s'] in self.market_valid and data['s'] not in self.spike_config.get('market_excluded',['BTCUSDT']):
+                                if data['s'] in self.market_valid and (self.spike_config.get('spike_top20_only') or data['s'] not in self.spike_config.get('market_excluded',['BTCUSDT'])):
                                     self.inspect_spike(data['s'],float(k['c']),int(data['E']))
                                 self.ws_kline_last[data["s"]] = time.time()
                         except TimeoutError:
@@ -219,15 +233,15 @@ class Monitor:
                         except Exception as exc:
                             errors.append(s+": "+str(exc))
                     cfg=store.settings()
-                    monitored=set(monitoring.market_symbols(cfg))
+                    monitored=self.market_valid if cfg.get('spike_top20_only') else set(monitoring.market_symbols(cfg))
                     # If the stream is unavailable, evaluate with fresh REST
                     # quotes as a fallback. This may be delayed by the OI cycle.
                     with self.lock:
                         spike_ticks=[(s,t['price'],t['event_time']) for s,t in self.ticks.items() if s in monitored]
                     for spike_tick in spike_ticks:
                         self.inspect_spike(*spike_tick)
-                    # Only <=15m price-spike episodes can create alerts.
-                    # OI feeds the ranking; no OI, volume or composite alarms.
+                    # Legacy spike evaluation is disabled by the current settings.
+                    # No OI, volume or composite alarms are generated here.
                     if time.time()-last_prune>3600:
                         store.prune_live()
                         last_prune=time.time()
@@ -235,7 +249,7 @@ class Monitor:
                     errors.append(str(exc))
                     self.blocked_until=max(self.blocked_until,self.client.blocked_until)
                 store.put("monitor_health",{"heartbeat":time.time(),"errors":errors,"symbols":len(store.filter_stock_symbols(cfg['watchlist'],cfg)),'market_symbols':len(monitoring.market_symbols(cfg)),
-                    "cycle_seconds":time.time()-started,"blocked_until":self.blocked_until,'mode':'15m_price_alerts_only'})
+                    "cycle_seconds":time.time()-started,"blocked_until":self.blocked_until,'mode':'15m_price_alerts_only' if cfg.get('spike_enabled') else 'market_monitor_only'})
                 print(json.dumps({"watching":len(cfg["watchlist"]),"errors":errors,"seconds":round(time.time()-started,2)},ensure_ascii=False),flush=True)
                 time.sleep(max(1,10-(time.time()-started),min(900,self.blocked_until-time.time())))
 

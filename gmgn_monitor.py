@@ -12,18 +12,23 @@ from urllib.parse import quote
 import store
 import gmgn_equities as equities
 import gmgn_tracking as tracking
+import gmgn_market_caps as market_caps
 from gmgn_credentials import api_key
 
 CHAINS = ('sol', 'bsc', 'base', 'robinhood')
 CHAIN_LABELS = {'sol':'SOL','bsc':'BSC','base':'BASE','robinhood':'ROB'}
 ZONE = timezone(timedelta(hours=8))
-DEFAULTS = dict(enabled=True, graduate_volume=150000., other_volume=1000000., kol_count=1,exclude_equities=True,
-                poll_seconds=15,tracking_days=10,daily_limit=1)
+DEFAULTS = dict(enabled=True, graduate_volume=200000., other_volume=1000000., kol_count=1,exclude_equities=True,
+                participant_mode='kol_or_smart',participant_min=1,poll_seconds=60,tracking_days=10,daily_limit=1)
+EXTRA_RULE = dict(enabled=True,data_verified=True,graduation_window_days=30,exclude_today=True,
+                  volume_window='5m',volume_usd=300000.,kol_gt=3,timezone='Asia/Shanghai',
+                  status='启用：非今日毕业、30天内，5分钟成交额>300K且KOL>3')
 
 
 def configuration():
     cfg=DEFAULTS | store.get('gmgn_config', {}) | {'exclude_equities':True,'tracking_days':10,'daily_limit':1}
     cfg.pop('people',None)  # Retire the previous smart-money + KOL gate.
+    cfg['extra_30d_rule']=EXTRA_RULE | store.get('gmgn_extra_30d_rule',{})
     return cfg
 
 
@@ -82,12 +87,40 @@ def launch_kind(token):
     return 'unknown'
 
 
+def extra_age_eligible(token,cfg,now):
+    extra=cfg.get('extra_30d_rule',{})
+    opened=number(token.get('open_timestamp'))
+    midnight=datetime.fromtimestamp(now,ZONE).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
+    return bool(extra.get('enabled') and launch_kind(token)=='launchpad'
+                and str(token.get('launchpad_status')) in ('1','2') and opened is not None
+                and now-extra.get('graduation_window_days',30)*86400<=opened<midnight)
+
+
+def extra_reason(token,cfg,now):
+    if equities.equity_reason(token) or not extra_age_eligible(token,cfg,now):return ''
+    extra=cfg['extra_30d_rule'];volume=number(token.get('volume'));kol=number(token.get('renowned_count'))
+    return '近30日毕业放量' if (volume is not None and volume>extra['volume_usd']
+                               and kol is not None and kol>extra['kol_gt']) else ''
+
+
+def episode_threshold(token,cfg,now,followup=False):
+    if launch_kind(token)=='direct':return cfg['other_volume']
+    if not followup and extra_age_eligible(token,cfg,now):return cfg['extra_30d_rule']['volume_usd']
+    return cfg['graduate_volume']
+
+
 def reason(token, cfg, now, followup=False):
     if equities.equity_reason(token):
         return ''
-    kol=token.get('renowned_count')
-    if kol is None or kol<=cfg.get('kol_count',DEFAULTS['kol_count']):
-        return ''
+    additional=extra_reason(token,cfg,now)
+    if additional:return additional
+    if cfg.get('participant_mode')=='kol_or_smart':
+        minimum=cfg.get('participant_min',1)
+        counts=(number(token.get('renowned_count')),number(token.get('smart_degen_count')))
+        if not any(n is not None and n>=minimum for n in counts):return ''
+    else:
+        kol=number(token.get('renowned_count'))
+        if kol is None or kol<=cfg.get('kol_count',DEFAULTS['kol_count']):return ''
     volume = token.get('volume')
     if volume is None:
         return ''
@@ -110,10 +143,14 @@ def schema(con):
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_alerts (id INTEGER PRIMARY KEY, chain TEXT, address TEXT, rule TEXT, triggered REAL, last_seen REAL, acknowledged INTEGER DEFAULT 0, data TEXT)')
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_episodes (chain TEXT, address TEXT, rule TEXT, active INTEGER, last_true REAL, below_since REAL, observed REAL, PRIMARY KEY(chain,address,rule))')
     tracking.schema(con)
+    market_caps.schema(con)
 
 
 def record_scan(chain, tokens, cfg, stamp):
-    return tracking.record_scan(chain,tokens,cfg,stamp)
+    import signal_ingest
+    # Only public observations and whitelisted rule parameters enter the inbox.
+    rules={key:cfg[key] for key in (*DEFAULTS,'extra_30d_rule') if key in cfg}
+    return signal_ingest.submit('gmgn',dict(chain=chain,tokens=list(tokens),cfg=rules,stamp=stamp))
 
 
 def pending_alerts():
@@ -282,6 +319,8 @@ class Monitor:
         limited coverage instead of pretending the whole chain was checked.
         """
         limit=50;threshold=min(cfg['graduate_volume'],cfg['other_volume'])
+        extra=cfg.get('extra_30d_rule',{})
+        if extra.get('enabled'):threshold=min(threshold,extra['volume_usd'])
         tokens={};ceiling=None;capped=False;pages=0
         for _ in range(2):
             args=['market','trending','--chain',chain,'--interval','5m','--order-by','volume',
@@ -327,7 +366,8 @@ class Monitor:
             try:
                 tokens,coverage=self.candidates(chain,cfg)
                 stamp=time.time()
-                record_scan(chain,tokens,cfg,stamp)
+                if not record_scan(chain,tokens,cfg,stamp):
+                    raise QueryError('GMGN 数据已缓存待入库，稍后重试',30,'LOCAL_INGEST_PENDING')
                 snapshot['chains'][chain]=coverage|dict(updated=stamp,last_attempt=attempted,retry_at=0,error='',error_code='',failures=0,duration=round(stamp-attempted,2))
                 if previous.get('failures') or attempted-previous.get('updated',attempted)>180:
                     print(json.dumps(dict(event='gmgn_chain_recovered',chain=chain,time=stamp,count=len(tokens))),flush=True)
@@ -351,6 +391,7 @@ class Monitor:
                 errors.append(error)
         try:
             tracking.refresh_info(self.client,cfg)
+            market_caps.refresh(self.client,cfg)
             snapshot['info_error']=''
         except QueryError as error:
             snapshot['info_error']=str(error)
@@ -370,23 +411,27 @@ class Monitor:
 def run():
     monitor = Monitor()
     while True:
+        started=time.time()
         delay = max(15,configuration()['poll_seconds'])
+        failed=False
         try:
             monitor.cycle()
         except QueryError as exc:
+            failed=True
             delay = exc.delay
             snapshot = store.get('gmgn_market',{})
             snapshot.update(heartbeat=time.time(),status=str(exc),retry_at=time.time()+delay)
             store.put('gmgn_market',snapshot)
         except Exception:
+            failed=True
             # Do not log provider payloads, subprocess environments, or credentials.
             delay = 30
             snapshot = store.get('gmgn_market',{})
             snapshot.update(heartbeat=time.time(),status='GMGN 采集暂不可用，稍后重试')
             store.put('gmgn_market',snapshot)
-        # Wait after completion: request time must not eat the configured pause.
-        # For errors, the delay/reset deadline is measured when the error arrives.
-        time.sleep(max(1,delay))
+        # Healthy scans start once per configured interval; failures retain the
+        # full provider retry pause and never make a catch-up request burst.
+        time.sleep(max(1,delay if failed else delay-(time.time()-started)))
 
 
 if __name__ == '__main__':

@@ -41,16 +41,17 @@ def test_budgeted_poll_interval_survives_restart_and_deduplicates(isolated):
     assert news.recent()[0]['content']=='修订内容'
 
 
-def test_failure_keeps_cache_and_applies_backoff(isolated):
+def test_failure_keeps_cache_and_applies_backoff(isolated,monkeypatch):
     client=FakeClient();monitor=news.Monitor(client);monitor.step(NOW)
     client.error=news.NewsError('律动接口限流，等待重试',900)
-    monitor.step(NOW+300)
+    monkeypatch.setattr(news.time,'time',lambda:NOW+news.INTERVAL)
+    monitor.step(NOW+news.INTERVAL)
     health=store.get('blockbeats_health')
-    assert health['last_success']==NOW and health['next_poll_at']==NOW+900
+    assert health['last_success']==NOW and health['next_poll_at']==NOW+news.INTERVAL+900
     assert len(news.recent())==1
-    monitor.step(NOW+899)
+    monitor.step(NOW+news.INTERVAL+899)
     assert len(client.calls)==2
-    client.error=None;monitor.step(NOW+900)
+    client.error=None;monitor.step(NOW+news.INTERVAL+900)
     assert store.get('blockbeats_health')['error']==''
 
 
@@ -68,7 +69,7 @@ def test_recovery_pages_are_bounded_and_flag_incomplete_backfill(isolated):
         def page(self,page):
             self.calls.append(page)
             return [news.normalize(raw(i),NOW) for i in range(300-(page-1)*50,300-page*50,-1)]
-    client=Recovery();news.Monitor(client).step(NOW+300)
+    client=Recovery();news.Monitor(client).step(NOW+news.INTERVAL)
     assert client.calls==[1,2,3]
     assert store.get('blockbeats_health')['coverage_limited'] is True
     assert len(news.recent(500))==151
@@ -101,7 +102,7 @@ def test_export_is_allowlisted_and_contains_news_timestamps(isolated):
     store.put('blockbeats_config',dict(api_key='PRIVATE_NEWS_KEY'))
     packet=data_export.build_packet('test',now=NOW)
     module=packet['modules']['blockbeats_news']
-    assert module['status']=='ok' and module['data']['poll_seconds']==285
+    assert module['status']=='ok' and module['data']['poll_seconds']==900
     assert module['data']['request_budget']['provider_remaining'] is None
     assert module['data']['items'][0]['published_text']=='2026-10-29 12:00:00'
     assert 'PRIVATE_NEWS_KEY' not in data_export.encode(packet).decode()
@@ -163,5 +164,5 @@ def test_legacy_auto_scroll_setting_is_retired(isolated):
     assert news.configuration()['auto_scroll'] is False
     assert 'scroll_speed' not in news.configuration()
     frame=blockbeats_ui.frame_html()
-    assert '手动阅读' in frame and '每4分45秒获取' in frame
+    assert '手动阅读' in frame and '每15分钟获取' in frame
     assert 'function tick' not in frame and 'id="toggle"' not in frame

@@ -23,7 +23,7 @@ DEFAULTS = {
     "window_minutes": RANK_WINDOW_MINUTES, "up_pct": 1.5, "down_pct": 1.5,
     "oi_up_pct": 3.0, "oi_down_pct": 3.0, "quote_ratio": 2.0,
     "min_quote": 0.0, "rule_mode": "任一条件", "priority": [], "overrides": {},
-    "spike_up_pct": 10.0, "spike_down_pct": 10.0,
+    "spike_enabled": True, "spike_top20_only":True, "spike_up_pct": 5.0, "spike_down_pct": 5.0,
     "quiet_mode": True, "confirm_seconds": 30, "release_seconds": 60,
     "radar_min_quote": 1000000.0, "radar_volume_ratio": 1.8,
     "radar_oi_pct": 2.0, "radar_quiet_pct": 3.0,

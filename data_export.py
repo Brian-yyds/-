@@ -70,7 +70,7 @@ def binance_market(context):
     return dict(observed_at=live.get('saved_at'), window_minutes=store.RANK_WINDOW_MINUTES,
                 quote_currency='USDT', universe=fields(info, 'fetched_at symbols market_symbols alt_symbols stock_symbols commodity_symbols'),
                 tickers=ticks, rows=list(lookup.values()), rankings=ranks, focus=focus,
-                rules=fields(cfg, 'spike_up_pct spike_down_pct top_symbols priority market_excluded include_stocks'),
+                rules=fields(cfg, 'spike_enabled spike_top20_only spike_up_pct spike_down_pct top_symbols priority market_excluded include_stocks'),
                 freshness=dict(price_market_max_age_seconds=90, focus_max_age_seconds=20,
                                oi_market_max_age_seconds=180),
                 spike_window_minutes=15)
@@ -86,7 +86,9 @@ def gmgn_data(context):
                 retry_at=snapshot.get('retry_at'),enabled=snapshot.get('enabled'),
                 chain_status={c:fields(v,'updated count capped last_attempt retry_at error_code error_status failures duration pages batch_limit') for c,v in snapshot.get('chains',{}).items()},
                 chains=list(gmgn.CHAINS),watch_ranking=ranking,
-                rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume kol_count poll_seconds exclude_equities tracking_days daily_limit')|
+                extra_30d_rule=fields(store.get('gmgn_extra_30d_rule',{}),
+                    'enabled data_verified graduation_window_days exclude_today volume_window volume_usd kol_gt timezone status checked_at'),
+                rules=fields(gmgn.configuration(),'enabled graduate_volume other_volume kol_count participant_mode participant_min poll_seconds exclude_equities tracking_days daily_limit')|
                       dict(daily_timezone='Asia/Shanghai',tracking_anchor='first_alert',repeat_requires_new_breakout=True,
                            smart_money_required=False,alarm_time_timezone='Asia/Shanghai'))
 
@@ -99,7 +101,7 @@ def market_volume(context):
     for day in snapshot.get('days', []):
         days.append(fields(day, 'start quote top10_quote') | {
             'top10': [fields(t, 'symbol quote') for t in day.get('top10', [])]})
-    return fields(snapshot, 'complete window_days symbol_count range_start range_end includes_today timezone updated_at scan_started source scope') | {'days': days}
+    return fields(snapshot, 'complete window_days symbol_count range_start range_end includes_today timezone updated_at scan_started source scope') | {'days': days,'active':False,'historical_cache':True}
 
 
 @section('health')
@@ -124,6 +126,29 @@ def blockbeats_news(context):
                 observed_at=health.get('last_success'),next_poll_at=health.get('next_poll_at'),
                 coverage_limited=bool(health.get('coverage_limited')),request_budget=news.request_budget(),
                 items=[fields(row,'id title content link published_at published_text observed') for row in news.recent(100)])
+
+
+@section('wallet_signal_dashboard')
+def wallet_signal_dashboard(context):
+    import web3_signals
+    snapshot=web3_signals.dashboard()
+    signal_fields='chain address signal_id symbol logo triggered observed direction status smart_money_count current_price market_cap alert_price alert_market_cap exit_rate signal_type'
+    return dict(generated_at=snapshot.get('generated_at'),special_updated_at=snapshot.get('special_updated_at'),rules=fields(snapshot.get('rules',{}),
+        'graduate_volume other_volume kol_count participant_mode participant_min web3_chains web3_poll_seconds special_poll_seconds gmgn_fresh_seconds web3_fresh_seconds market_cap_interval_seconds match_mode alarm_pool_days match_on_each_source_update matched_event_is_permanent match_engine_version'),
+        gmgn_alerts=[fields(r,'id triggered rule last_seen current_market_cap market_cap_observed market_cap_stale')|
+                     dict(token=token(r['token'])) for r in snapshot.get('gmgn_alerts',[])],
+        web3_enabled=snapshot.get('web3_enabled'),
+        web3_signals=[fields(r,signal_fields) for r in snapshot.get('web3_signals',[])],
+        special_alerts=[fields(r,'id triggered rule gmgn_observed gmgn_alert_id gmgn_triggered web3_first_observed web3_last_observed watch_first_alert watch_expires_at match_mode')|dict(token=token(r['token']),signal=fields(r['signal'],signal_fields))
+                        for r in snapshot.get('special_alerts',[])])
+
+
+@section('binance_15m_anomalies')
+def binance_15m_anomalies(context):
+    import spike_monitor
+    snapshot=spike_monitor.snapshot(context['now'])
+    names='id time symbol direction change base_price price base_time event_time basis acknowledged'.split()
+    return snapshot|{'records':[dict(zip(names,row)) for row in snapshot['records']]}
 
 
 def read_events(cursor):

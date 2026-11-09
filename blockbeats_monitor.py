@@ -12,7 +12,7 @@ import store
 from blockbeats_credentials import api_key
 
 BASE='https://api-pro.theblockbeats.info'
-INTERVAL=285
+INTERVAL=900
 REQUEST_WINDOW=31*86400
 REQUEST_CAP=9800
 MAX_PAGES=3

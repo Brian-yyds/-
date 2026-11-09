@@ -22,7 +22,7 @@ def raw(i,volume=200001):
 def test_fifty_is_enough_when_tail_cannot_qualify_and_equality_is_not_capped(isolated):
     class Client:
         def __init__(self):self.calls=[]
-        def query(self,args):self.calls.append(args);return dict(rank=[raw(i,150000) for i in range(1,51)])
+        def query(self,args):self.calls.append(args);return dict(rank=[raw(i,200000) for i in range(1,51)])
     client=Client();tokens,coverage=g.Monitor(client).candidates('bsc',g.DEFAULTS)
     assert len(client.calls)==1 and coverage['capped'] is False
     assert client.calls[0][client.calls[0].index('--limit')+1]=='50'
@@ -35,9 +35,9 @@ def test_volume_boundary_supplements_small_page_deduplicates_and_reports_large_t
         def __init__(self,tie=False):self.calls=[];self.tie=tie
         def query(self,args):
             self.calls.append(args)
-            if len(self.calls)==1 or self.tie:return dict(rank=[raw(i,200000) for i in range(1,51)])
-            assert float(args[args.index('--max-volume')+1])==200000
-            return dict(rank=[raw(50,200000)]+[raw(i,140000) for i in range(51,100)])
+            if len(self.calls)==1 or self.tie:return dict(rank=[raw(i,300000) for i in range(1,51)])
+            assert float(args[args.index('--max-volume')+1])==300000
+            return dict(rank=[raw(50,300000)]+[raw(i,90000) for i in range(51,100)])
     client=Client();tokens,c=g.Monitor(client).candidates('bsc',g.DEFAULTS)
     assert len(tokens)==99 and c['pages']==2 and not c['capped']
     client=Client(tie=True);tokens,c=g.Monitor(client).candidates('bsc',g.DEFAULTS)

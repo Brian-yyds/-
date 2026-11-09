@@ -13,40 +13,44 @@ import store
 
 def rules():
     cfg=store.settings()
-    st.subheader('币安急涨急跌')
-    with st.form('spike_thresholds'):
-        st.caption('币股、ETF、大宗合约正常参与主监控和警报；仅顶部成交统计排除这些类别。')
-        a,b=st.columns(2)
-        up=a.number_input('15分钟急涨达到 %',min_value=.1,max_value=1000.,value=float(cfg['spike_up_pct']),step=.5)
-        down=b.number_input('15分钟急跌达到 %',min_value=.1,max_value=99.9,value=float(cfg['spike_down_pct']),step=.5)
-        if st.form_submit_button('保存币安规则',type='primary'):
-            store.put('settings',store.settings()|dict(spike_up_pct=up,spike_down_pct=down,include_stocks=True))
-            st.success('已保存，采集服务自动应用。')
-    from monitor_ui import acknowledgement,gmgn_acknowledgement
-    acknowledgement()
+    from monitor_ui import gmgn_acknowledgement
+    st.subheader('15分钟异动')
+    st.caption('实时监控24小时USDT成交额排名前20的合约，15分钟内上涨或下跌严格超过5%时产生小警报。包含BTC、币股与大宗；榜单筛选不限制这个前20范围。同一波行情不重复报警，不播放声音。')
     st.subheader('GMGN 四链监控')
     gc=gmgn.configuration()
     with st.form('gmgn_rules'):
         enabled=st.checkbox('启用 SOL / BSC / Base / ROB',value=gc['enabled'])
         a,b=st.columns(2)
-        kol=a.number_input('所有警报：KOL 人数大于',min_value=0,max_value=100000,value=int(gc['kol_count']))
+        people=a.number_input('KOL或聪明钱人数至少',min_value=1,max_value=100000,value=int(gc.get('participant_min',1)))
         graduate=a.number_input('今日毕业：5分钟成交额大于 USD',min_value=1000.,value=float(gc['graduate_volume']),step=50000.)
         other=b.number_input('非发射台：5分钟成交额大于 USD',min_value=1000.,value=float(gc['other_volume']),step=100000.)
-        poll=st.number_input('每轮扫描后的最短间隔（秒）',min_value=15,max_value=3600,value=int(gc['poll_seconds']),step=5)
-        st.caption('“大于”不包含等于。今日毕业默认5分钟成交额超过150K美元、KOL大于1（至少2人）；不要求聪明钱人数或合计人数。非发射台默认超过100万且不限日期，两类共用KOL阈值，排除币股/ETF。')
+        poll=st.number_input('GMGN扫描周期（秒）',min_value=60,max_value=3600,value=max(60,int(gc['poll_seconds'])),step=60)
+        st.caption('今日毕业5分钟成交额严格超过200K美元；非发射台仍严格超过100万美元且不限日期。两类都要求KOL至少1人或聪明钱至少1人，保留币股/ETF排除及去重。')
         st.caption('首次毕业警报要求北京时间当天；已报警毕业代币10日内再次突破沿用成交额和KOL条件，不再要求今日毕业。警报卡片直接显示首次触发时间，精确到秒，使用北京时间。')
         st.caption('同链同CA按北京时间每天最多报警一次；持续超阈值不重复报，成交额连续观测5分钟回落至阈值内后再突破才可复报。人数波动不重置成交额去重。重启与确认不重置去重。')
         st.caption('首次报警起10×24小时内跟踪，重复报警不续期，到期停止该轮跟踪并移出榜单。按真实近1小时美元成交额取前10；缺失/过期数据不伪造零成交。')
         if st.form_submit_button('保存 GMGN 规则',type='primary'):
-            store.put('gmgn_config',gc|dict(enabled=enabled,kol_count=kol,graduate_volume=graduate,
+            store.put('gmgn_config',gc|dict(enabled=enabled,participant_mode='kol_or_smart',participant_min=people,graduate_volume=graduate,
                 other_volume=other,poll_seconds=poll))
             st.success('已保存，下一轮扫描生效。')
     gmgn_acknowledgement()
+    st.caption('GMGN警报卡片的当前市值每5分钟同步，优先复用已有排行/详情请求；离开榜单的最近3条警报按需补查。市值更新不产生新警报或声音，报警时间保持不变；悬停市值可看更新时间，失败保留上次值。')
+    extra=store.get('gmgn_extra_30d_rule',{})
+    st.caption('额外规则：非北京时间今天毕业、毕业后30天内，5分钟成交额严格超过300K美元，且KOL严格大于3（至少4人）。不要求涨幅或聪明钱人数。币股排除、每天一次及成交额回落后再突破的去重规则不变；10日跟踪窗口不续期。')
+    import web3_signals as wallet_signals
+    st.subheader('币安 Web3 钱包信号与特级警报')
+    with st.form('wallet_signal_rules'):
+        enabled=st.checkbox('启用 SOL / BSC 钱包公开信号',value=bool(wallet_signals.configuration()['enabled']))
+        st.caption('每分钟获取币安钱包公开聪明钱/KOL买卖信号，每一边成功更新后立即核对特级警报，另有每分钟兜底。页面每3秒读取缓存，不连接个人钱包或个人自定义策略。')
+        st.caption('特级警报按事件池匹配：GMGN真实报警后进入原有10日跟踪池，不因成交额回落取消；已实际采集到的有效Web3事件保留10日，同链同CA双向核对。先后顺序不限，命中记录永久保留。GMGN跟踪起点不因重复报警续期，每日同币最多一次，同一Web3信号不重复；声音仍只用于GMGN新警报。')
+        if st.form_submit_button('保存钱包信号设置'):
+            store.put('web3_signal_config',dict(enabled=enabled))
+            st.success('已保存，下一轮自动应用。')
     st.subheader('律动快讯')
     nc=news.configuration()
     with st.form('blockbeats_rules'):
         enabled=st.checkbox('启用律动中文快讯',value=bool(nc['enabled']))
-        st.caption('快讯固定为手动阅读。后台每4分45秒获取，按31天连续运行约9,398次；余量留给重试及补页，每次API请求均计入本机近31天9,800次上限。')
+        st.caption('快讯固定为手动阅读。后台每15分钟获取，按31天连续运行约2,976次首屏请求；为其他AI保留额度，分页及失败重试另计，每次API请求均计入本机近31天9,800次上限。')
         budget=news.request_budget()
         st.caption(f'本机近31天已记录 {budget["attempted"]:,} 次尝试；不含启用计数前及其他客户端的调用。官方接口不提供当前剩余额度，官网需登录核实；这里不是官方余额。')
         if st.form_submit_button('保存快讯设置'):
@@ -66,18 +70,17 @@ def display_settings():
         view=store.get('monitor_view',{})
         st.subheader('榜单显示')
         a,b=st.columns(2)
-        scopes=['全市场','仅重点']; assets=['全部','加密货币','股票','大宗']; directions=['增仓','减仓']
+        scopes=['全市场','仅重点']; assets=['全部','加密货币','股票','大宗']
         scope=a.radio('榜单范围',scopes,index=scopes.index(view.get('scope','全市场')),horizontal=True)
         asset=b.radio('合约类型',assets,index=assets.index(view.get('asset_scope','全部')) if view.get('asset_scope','全部') in assets else 0,horizontal=True)
-        direction=a.radio('OI方向',directions,index=directions.index(view.get('oi_direction','增仓')),horizontal=True)
         search=b.text_input('榜单搜索',value=view.get('search',''),placeholder='留空显示全部')
-        st.caption('显示筛选只影响排行榜；急涨急跌警报覆盖加密、币股/ETF和大宗。成交统计单独剔除币股、大宗及ETF。')
+        st.caption('显示筛选只影响4小时排行榜；15分钟异动独立监控全市场24小时成交额前20名。')
         if st.form_submit_button('保存重点与显示',type='primary'):
             if not top:
                 st.error('请至少选择一个顶部重点标的。')
             else:
                 store.put('settings',cfg|dict(top_symbols=top,priority=list(dict.fromkeys(top+priority))))
-                store.put('monitor_view',dict(scope=scope,asset_scope=asset,oi_direction=direction,search=search.strip()))
+                store.put('monitor_view',dict(scope=scope,asset_scope=asset,oi_direction='增仓',search=search.strip()))
                 st.success('已保存，返回监控面板即可查看。')
 
 
@@ -148,10 +151,17 @@ def api_settings():
 
 def diagnostics():
     st.subheader('数据采集状态')
+    audit=store.get('health_audit',{})
+    if audit:
+        from datetime import datetime
+        stamp=datetime.fromtimestamp(audit['checked_at']).strftime('%m-%d %H:%M:%S')
+        st.caption(f'自动巡检：{stamp} · 每小时一次；只修复本启动器拥有的退出或停滞进程。')
+        for finding in audit.get('findings',[]):
+            st.caption(f"{finding['service']} · {finding['code']}")
     now=time.time()
     labels=[('币安采集','monitor_health','heartbeat'),('币安全市场扫描','market_health','heartbeat'),
             ('币安实时流','stream_health','last_message'),('GMGN 四链扫描','gmgn_market','last_success'),
-            ('30日市场成交统计','market_volume_30d','updated_at'),('律动快讯','blockbeats_health','last_success')]
+            ('Web3 钱包信号','web3_signal_health','heartbeat'),('律动快讯','blockbeats_health','last_success')]
     for label,key,field in labels:
         snapshot=store.get(key,{})
         stamp=snapshot.get(field,0)
@@ -170,16 +180,19 @@ def diagnostics():
     if info:st.caption(f'最近一轮已报警代币详情：尝试 {info.get("attempted",0)} 个，成功 {info.get("succeeded",0)} 个，未成功 {info.get("failed",0)} 个；未成功的保留原缓存，过期后不参与小时榜。')
     if snapshot.get('info_error'):st.caption('详情更新：'+snapshot['info_error'])
     st.caption('GMGN 的每轮耗时另计，遇到接口限流自动等待；不会因刷新调试页额外发起扫描。')
+    extra=store.get('gmgn_extra_30d_rule',{})
+    if extra:st.caption('30日毕业额外规则：'+extra.get('status','暂停，待数据验证'))
     st.subheader('GMGN 规则试算')
     st.caption('仅在本地验证输入是否符合当前规则，不写入真实警报，也不请求接口。')
     with st.form('gmgn_simulator'):
         kind=st.radio('代币类型',['今天毕业的发射台代币','非发射台代币','非今天毕业的发射台代币'],horizontal=True)
         volume=st.number_input('试算：5分钟成交额 USD',min_value=0.,value=float(gmgn.configuration()['graduate_volume'])+1.)
         a,b=st.columns(2)
-        kol=a.number_input('试算：KOL人数',min_value=0,value=2)
+        kol=a.number_input('试算：KOL人数',min_value=0,value=1)
+        smart=b.number_input('试算：聪明钱人数',min_value=0,value=0)
         if st.form_submit_button('检查是否触发'):
             direct=kind=='非发射台代币'
-            token=dict(volume=volume,renowned_count=kol,launch_known=True,
+            token=dict(volume=volume,renowned_count=kol,smart_degen_count=smart,launch_known=True,
                        launchpad='' if direct else 'pump',launchpad_platform='',launchpad_status='1',
                        open_timestamp=now if kind=='今天毕业的发射台代币' else now-2*86400)
             reason=gmgn.reason(token,gmgn.configuration(),now)

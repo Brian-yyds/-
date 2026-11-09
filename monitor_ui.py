@@ -327,7 +327,7 @@ def quick_prices(now=None):
                      f'<div class="focus-change" title="{html.escape(tick["basis"],quote=True)}">近4h <b class="{change_css}">{change_text}</b></div>'
                      f'<div class="quick-price-status{" is-live" if fresh else ""}">{status}</div></div>')
     prices='<div class="quick-prices">'+''.join(cards)+'</div>'
-    return '<div class="market-panel"><div class="overview-strip"><div class="top-strip">'+prices+'</div>'+market_volume_card(now)+'</div></div>'
+    return '<div class="market-panel"><div class="overview-strip"><div class="top-strip">'+prices+'</div></div></div>'
 
 
 def gmgn_token_preview(token,tooltip='打开 GMGN',compact=False,alarm_time=None):
@@ -452,6 +452,26 @@ def merged_alarms(records):
     return result
 
 
+def top20_spike_card(now=None):
+    import spike_monitor
+    snapshot=spike_monitor.snapshot(now)
+    body=[]
+    for row in snapshot['tracked'][:30]:
+        change=row['tracking_change'];window=row['change15m']
+        color='up-accent' if change is not None and change>=0 else 'down-accent' if change is not None else 'muted'
+        value=f'{change:+.2f}%' if change is not None else '—'
+        window_text=f'{window:+.2f}%' if window is not None else '—'
+        price_text=f'{row["price"]:.8g}' if row['price'] is not None else '等待新行情'
+        status='实时跟踪' if row['fresh'] else '行情延迟'
+        tip='当前价相对首次触发基准的涨跌幅；近15m单独使用滚动基准。'+('当前已不在成交额前20，继续跟踪已报警代币。' if not row['in_top20'] else '')
+        body.append(f'<li class="ranking-entry" data-tracked-symbol="{row["symbol"]}"><div class="ranking-main"><div class="ranking-name">'+coin(row['symbol'])+
+            f'</div><div class="ranking-primary" title="{html.escape(tip,quote=True)}"><small>{status} · 首报基准</small><strong class="{color}">{value}</strong></div></div>'
+            f'<div class="ranking-footer"><span>近15m {window_text}</span><span>现价 {price_text}</span></div>'
+            f'<div class="ranking-footer"><time>首报 {clock(row["triggered"]*1000)}</time><span>触发 {row["trigger_change"]:+.2f}%</span></div></li>')
+    content='<ol class="ranking-list">'+''.join(body)+'</ol>' if body else '<div class="signal-empty"><strong>暂无超过5%的异动</strong>24小时 USDT 成交额前20名<br>15分钟内上涨或下跌超过5%时提醒</div>'
+    return '<section class="rank-card spike-mini"><div class="rank-title"><h2>15分钟异动</h2><span>同币一条 · 实时跟踪</span></div><div class="rank-scroll" role="region" aria-label="15分钟异动警报" tabindex="0">'+content+'</div></section>'
+
+
 @st.fragment(run_every='3s')
 def acknowledgement():
     pending=monitoring.monitored_spike_alerts(store.spike_alerts(unacknowledged=True,limit=10000))
@@ -480,23 +500,20 @@ def board(scope,search,oi_direction,asset_scope='全部'):
     scanner_alive=0<=time.time()-scanner.get('heartbeat',0)<45
     state='● 监控中' if alive and connected and scanner_alive else '● 轮询监控' if alive and scanner_alive else '● 正在连接 / 请检查服务'
     css='live' if alive and scanner_alive else 'offline'
-    pending_records=monitoring.monitored_spike_alerts(store.spike_alerts(unacknowledged=True,limit=10000),cfg)
-    pending=merged_alarms(pending_records)
     stock_symbols={r['symbol'] for r in rows if r['asset_type']=='stock'}
     commodity_symbols={r['symbol'] for r in rows if r['asset_type']=='commodity'}
-    summary=(coin(pending[0][2],stock=pending[0][2] in stock_symbols,commodity=pending[0][2] in commodity_symbols)+html.escape(f' {pending[0][3]} {pending[0][4]:+.2f}% · {len(pending)} 条待确认')) if pending else '暂无待确认报警'
-    summary_css='pending-label' if pending else 'pending-label quiet-label'
     stock_count=len(stock_symbols)
     commodity_count=len(commodity_symbols)
     coverage=f'全市场 {len(rows)} 合约 · 加密 {len(rows)-stock_count-commodity_count} / 股票 {stock_count} / 大宗 {commodity_count}'
-    st.markdown(f'<div class="live-line"><span class="{css}">{state}</span><span>{coverage}</span><span>排行 4 小时</span><span>{datetime.now(ZONE):%H:%M:%S}</span><span class="{summary_css}">{summary}</span></div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="live-line"><span class="{css}">{state}</span><span>{coverage}</span><span>排行 4 小时</span><span>{datetime.now(ZONE):%H:%M:%S}</span></div>',unsafe_allow_html=True)
     st.markdown(quick_prices(),unsafe_allow_html=True)
     shown=[r for r in rows if (scope!='仅重点' or r['priority']) and search.upper().strip() in r['symbol']
            and (asset_scope=='全部' or r['asset_type']=={'股票':'stock','加密货币':'crypto','大宗':'commodity'}.get(asset_scope))]
     cards=''.join(ranking_card(monitoring.ranked(shown,kind)[:30],title,kind)
-                  for title,kind in zip(['OI 异动榜','上涨榜','下跌榜'],['oi_up' if oi_direction=='增仓' else 'oi_down','up','down']))
-    alerts=alarm_card(pending,cfg)+gmgn_combined_card()
-    st.markdown('<div class="market-panel"><div class="rankings-grid market-rankings">'+cards+'</div><div class="alert-panels">'+alerts+'</div></div>',unsafe_allow_html=True)
+                  for title,kind in [('上涨榜','up'),('下跌榜','down')])
+    cards+=top20_spike_card()
+    from signal_ui import panels
+    st.markdown('<div class="market-panel"><div class="rankings-grid market-rankings">'+cards+'</div>'+panels()+'</div>',unsafe_allow_html=True)
     # Rankings are a viewing filter; they must never hide market-wide alarms.
     if not alive or not scanner_alive:
         st.warning('采集服务正在连接或心跳已过期；恢复连接后自动更新。')
@@ -509,6 +526,8 @@ def monitor_page():
     from sound_ui import sound_control, sound_events
     sound_control()
     sound_events()
+    from signal_ui import preserve_scroll
+    preserve_scroll()
     from blockbeats_ui import news_panel
     with st.container(key='dashboard'):
         news,market=st.columns([1.55,3.05],gap='medium',vertical_alignment='top')
@@ -528,5 +547,7 @@ def settings_page():
 def render():
     st.set_page_config(page_title='全市场异动监控',page_icon='◉',layout='wide',initial_sidebar_state='collapsed')
     st.markdown(STYLE,unsafe_allow_html=True)
+    from signal_ui import STYLE as SIGNAL_STYLE
+    st.markdown(SIGNAL_STYLE,unsafe_allow_html=True)
     st.navigation([st.Page(monitor_page,title='监控面板',default=True),
                    st.Page(settings_page,title='设置与调试',url_path='settings')],position='hidden').run()

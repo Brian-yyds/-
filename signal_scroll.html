@@ -1,0 +1,34 @@
+<script>
+// Local UI state only. Nothing is fetched, transmitted, or written to storage.
+(() => {
+  if (window.__workbenchSignalScrollV1) return;
+  window.__workbenchSignalScrollV1 = true;
+  const positions = new Map();
+  const selector = '.signal-dashboard .signal-list,.signal-dashboard .special-list';
+  const kind = node => node.closest('[data-signal-kind]')?.getAttribute('data-signal-kind');
+  document.addEventListener('scroll', event => {
+    const node = event.target;
+    if (!(node instanceof Element) || !node.matches(selector) || !node.isConnected) return;
+    const box = node.getBoundingClientRect();
+    const anchor = [...node.querySelectorAll('.signal-entry')].find(row => row.getBoundingClientRect().bottom > box.top + 1);
+    positions.set(kind(node), {
+      top: node.scrollTop,
+      key: anchor?.getAttribute('data-entry-key'),
+      offset: anchor ? anchor.getBoundingClientRect().top - box.top : 0
+    });
+  }, { capture: true, passive: true });
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll(selector).forEach(node => {
+      const saved = positions.get(kind(node));
+      if (!saved) return;
+      if (!saved.top) { if (node.scrollTop) node.scrollTop = 0; return; }
+      const anchor = [...node.querySelectorAll('.signal-entry')].find(row => row.getAttribute('data-entry-key') === saved.key);
+      const target = anchor
+        ? node.scrollTop + anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - saved.offset
+        : saved.top;
+      if (Math.abs(node.scrollTop - target) > 1) node.scrollTop = target;
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
