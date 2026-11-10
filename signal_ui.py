@@ -10,7 +10,7 @@ import web3_signals as signals
 
 STYLE='''<style>
 .market-rankings.rankings-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-.signal-panels{--feed-body:clamp(280px,calc(100dvh - 640px),420px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;min-width:0}
+.signal-panels{--feed-body:clamp(420px,calc((100dvh - 640px) * 1.25),525px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;min-width:0;margin-bottom:10px}
 .signal-panel{min-width:0;border:1px solid #3b514c;background:#1c292b;border-radius:12px;overflow:hidden}
 .signal-panel.wallet-panel{background:#202a32;border-color:#435365}
 .signal-panel .rank-title{height:46px;flex-wrap:nowrap;border-color:#34464a;padding:8px 12px}
@@ -40,10 +40,11 @@ STYLE='''<style>
 .special-list .signal-numbers{margin:5px 0}.special-list .signal-numbers b{font-size:18px}.special-list .signal-token-name b{font-size:16px}
 .special-list .signal-avatar{width:27px;height:27px}.special-list .signal-time{font-size:10px;gap:2px 8px}
 .special-list .signal-badge{font-size:10px}.special-list .signal-address{margin-top:2px}.special-list>.signal-empty{grid-column:1/-1;align-self:center;padding:14px 18px}
+.signal-list>.signal-entry,.special-list>.signal-entry{box-sizing:border-box;min-height:calc(var(--feed-body) / 3);display:flex!important;flex-direction:column;justify-content:center;padding-top:14px;padding-bottom:14px}
 .st-key-signal-scroll-memory{display:none!important}
 [data-testid="stLayoutWrapper"]:has(.st-key-signal-scroll-memory){display:none!important}
 .spike-mini .rank-title h2{color:#c5ad87!important}.spike-mini .ranking-primary strong{font-size:25px}.spike-mini .ranking-footer{font-size:11px;color:#8fa5b6;flex-wrap:wrap}
-@container market-panel (max-width:760px){.signal-panels{grid-template-columns:1fr;--feed-body:300px}.market-rankings.rankings-grid{grid-template-columns:1fr}.signal-entry .signal-token-name b{font-size:17px}}
+@container market-panel (max-width:760px){.signal-panels{grid-template-columns:1fr;--feed-body:450px}.market-rankings.rankings-grid{grid-template-columns:1fr}.signal-entry .signal-token-name b{font-size:17px}}
 </style>'''
 
 
@@ -92,7 +93,7 @@ def gmgn_status(snapshot,now):
 
 
 def gmgn_card(snapshot,now):
-    rows=snapshot.get('gmgn_alerts',[]);content=[]
+    rows=snapshot.get('gmgn_alerts',[])[:signals.DISPLAY_LIMIT];content=[]
     for row in rows:
         t=row['token'];holders=f'{t["holder_count"]:,.0f}' if t.get('holder_count') is not None else '—'
         cap=row.get('current_market_cap');cap_time=row.get('market_cap_observed')
@@ -111,11 +112,11 @@ def gmgn_card(snapshot,now):
     stamps=[v.get('updated',0) for v in snapshot.get('gmgn_health',{}).get('chains',{}).values()]
     updated=min(stamps) if len(stamps)==4 and all(stamps) else 0
     return ('<section class="signal-panel" data-signal-kind="gmgn"><div class="rank-title"><h2>GMGN 警报</h2>'
-            f'<span title="{esc(tip)}">{esc(gmgn_status(snapshot,now))} · 历史3条<br>采集 {clock(updated)[6:] if updated else "—"}</span></div><div class="signal-list" tabindex="0" aria-label="GMGN警报列表">'+body+'</div></section>')
+            f'<span title="{esc(tip)}">{esc(gmgn_status(snapshot,now))} · 最近{len(rows)}条 / 最多{signals.DISPLAY_LIMIT}条 · 上下滚动<br>采集 {clock(updated)[6:] if updated else "—"}</span></div><div class="signal-list" tabindex="0" aria-label="GMGN警报列表">'+body+'</div></section>')
 
 
 def web3_card(snapshot,now):
-    rows=snapshot.get('web3_signals',[]);health=snapshot.get('web3_health',{});content=[]
+    rows=snapshot.get('web3_signals',[])[:signals.DISPLAY_LIMIT];health=snapshot.get('web3_health',{});content=[]
     enabled=snapshot.get('web3_enabled',True)
     for row in rows:
         current=enabled and signals.signal_is_current(row,health,now)
@@ -136,28 +137,35 @@ def web3_card(snapshot,now):
     stamps=[health.get('chains',{}).get(c,{}).get('updated',0) for c in signals.CHAINS]
     updated=min(stamps) if all(stamps) else 0
     return ('<section class="signal-panel wallet-panel" data-signal-kind="web3"><div class="rank-title"><h2>Web3 钱包信号</h2>'
-            f'<span>有效 {active} · {esc(status)}<br>采集 {clock(updated)[6:] if updated else "—"}</span></div><div class="signal-list" tabindex="0" aria-label="币安钱包信号列表">'+body+'</div></section>')
+            f'<span>有效 {active} · {esc(status)} · 最多{signals.DISPLAY_LIMIT}条<br>采集 {clock(updated)[6:] if updated else "—"}</span></div><div class="signal-list" tabindex="0" aria-label="币安钱包信号列表">'+body+'</div></section>')
 
 
 def special_card(snapshot):
     content=[]
-    for row in snapshot.get('special_alerts',[]):
+    for row in snapshot.get('special_alerts',[])[:signals.DISPLAY_LIMIT]:
         tok=row['token'];signal=row['signal'];direction='买入' if signal['direction']=='buy' else '卖出'
-        stats=f'<span>触发时5m成交 <b>{usd(tok.get("volume"))}</b></span><span>市值 <b>{usd(tok.get("market_cap"))}</b></span>'
+        stats=f'<span>GMGN记录5m成交 <b>{usd(tok.get("volume"))}</b></span><span title="原GMGN记录中的历史市值，不是实时市值">记录市值 <b>{usd(tok.get("market_cap"))}</b></span>'
         times=f'<time>命中 {clock(row["triggered"])}</time><span>Web3 {direction} {clock(signal["triggered"])}</span>'
-        content.append(entry(tok,stats,times,'<span class="signal-badge">双源命中</span>',event_key=str(row['id'])))
+        origin=gmgn.number(row.get('gmgn_triggered'))
+        history=bool(origin is not None and datetime.fromtimestamp(origin,gmgn.ZONE).date()!=datetime.fromtimestamp(row['triggered'],gmgn.ZONE).date())
+        if origin is not None:
+            times+=f'<time>GMGN原报 {clock(origin)}</time>'
+            if row.get('watch_expires_at'):times+=f'<span>跟踪到期 {clock(row["watch_expires_at"])}</span>'
+        badge='历史GMGN匹配' if history else '双源命中'
+        tip='原GMGN报警在10日跟踪池内，与已采集的有效Web3事件匹配；不要求GMGN今天再报，50条展示上限不影响匹配。'
+        content.append(entry(tok,stats,times,f'<span class="signal-badge" title="{esc(tip)}">{badge}</span>',event_key=str(row['id'])))
     pool=snapshot.get('match_mode')=='alarm_pool_10d' or snapshot.get('rules',{}).get('match_mode')=='alarm_pool_10d'
     description=('GMGN 报警进入10日跟踪池后，与同链同CA已采集的有效Web3事件双向匹配；命中后保留，不因成交量回落取消。'
                  if pool else 'GMGN 放量条件与同链同合约的有效 Web3 信号同时命中后显示。')
     body=''.join(content) or '<div class="signal-empty"><strong>暂无特级警报</strong>'+description+'</div>'
     cadence='10日池 · 双向核对' if pool else '每分钟'
     checked=max(snapshot.get('generated_at',0),snapshot.get('special_updated_at',0))
-    return '<section class="signal-panel special-panel" data-signal-kind="special"><div class="rank-title"><h2>特级警报</h2><span>GMGN × Web3 · '+cadence+'<br>核对 '+clock(checked)[6:]+'</span></div><div class="special-list" tabindex="0" aria-label="特级警报列表">'+body+'</div></section>'
+    return '<section class="signal-panel special-panel" data-signal-kind="special"><div class="rank-title"><h2>特级警报</h2><span>GMGN × Web3 · '+cadence+f' · 最多{signals.DISPLAY_LIMIT}条<br>核对 '+clock(checked)[6:]+'</span></div><div class="special-list" tabindex="0" aria-label="特级警报列表">'+body+'</div></section>'
 
 
-def panels(now=None):
+def panels(now=None,snapshot=None):
     now=time.time() if now is None else now
-    snapshot=signals.dashboard()
+    snapshot=signals.dashboard() if snapshot is None else snapshot
     generated=snapshot.get('generated_at',0)
     warning=('<div class="signal-empty">信号采集更新延迟，保留历史记录。</div>' if not 0<=now-generated<=signals.PUBLISH_SECONDS+30 else '')
     return (f'<div class="signal-dashboard" data-refresh="{generated}">'+warning

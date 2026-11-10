@@ -1,0 +1,26 @@
+[Unit]
+Description=Read-only special alarm API for external bot polling
+After=network.target perp-workbench.service
+
+[Service]
+Type=simple
+User=perp-monitor
+Group=perp-monitor
+WorkingDirectory=/opt/perp-workbench/alert-api
+EnvironmentFile=/opt/perp-workbench/alert-api/secret.env
+ExecStart=/opt/perp-workbench/venv/bin/python -u /opt/perp-workbench/alert-api/alert_feed.py
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/perp-workbench/shared/user_data
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+TasksMax=32
+MemoryMax=192M
+
+[Install]
+WantedBy=multi-user.target

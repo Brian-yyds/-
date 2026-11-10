@@ -30,6 +30,9 @@ class Monitor:
         self.spike_prices=defaultdict(deque)
         self.spike_bars={}
         self.spike_active=store.spike_states()
+        from spike_monitor import active_records,LIFETIME
+        with store.connect() as con:
+            self.spike_expires={r[2]:r[1]+LIFETIME for r in active_records(con)}
         self.spike_config = store.settings()
         self.spike_config_time = time.time()
         self.spike_top_updated=0
@@ -61,6 +64,7 @@ class Monitor:
                 observations.popleft()
             metrics=monitoring.spike_metrics(observations,self.spike_bars.get(symbol,{}).values(),price,event_time)
             observations.append((event_time,price))
+            if top_only and event_time/1000<self.spike_expires.get(symbol,0):return
             if metrics is None:
                 return
             for direction,change,reference in [("急涨",metrics['up_pct'],metrics['up_reference']),
@@ -68,7 +72,7 @@ class Monitor:
                 active=self.spike_active.get((symbol,direction),False)
                 threshold=float(self.spike_config['spike_up_pct' if direction=='急涨' else 'spike_down_pct'])
                 exceeded=change>threshold+1e-9 if top_only else change>=threshold-1e-9
-                if not active and exceeded:
+                if exceeded and (not active or top_only):
                     signed_change=change if direction=="急涨" else -change
                     reference=reference|{'basis':reference['basis']+f' · 阈值{threshold:g}%'}
                     if top_only:
@@ -76,7 +80,11 @@ class Monitor:
                     created=store.set_spike_episode(symbol,direction,True,event_time,signed_change,reference,price)
                     self.spike_active[(symbol,direction)]=True
                     if created:
+                        if top_only:
+                            from spike_monitor import LIFETIME
+                            self.spike_expires[symbol]=event_time/1000+LIFETIME
                         print(json.dumps({"alarm":"15m_spike","symbol":symbol,"direction":direction,"threshold":threshold,"change":signed_change},ensure_ascii=False),flush=True)
+                    if top_only:break
                 elif active and change<threshold*.95:
                     store.set_spike_episode(symbol,direction,False,event_time)
                     self.spike_active[(symbol,direction)]=False

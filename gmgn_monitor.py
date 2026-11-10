@@ -141,9 +141,17 @@ def reason(token, cfg, now, followup=False):
 
 def schema(con):
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_alerts (id INTEGER PRIMARY KEY, chain TEXT, address TEXT, rule TEXT, triggered REAL, last_seen REAL, acknowledged INTEGER DEFAULT 0, data TEXT)')
+    preserve_history(con)
     con.execute('CREATE TABLE IF NOT EXISTS gmgn_episodes (chain TEXT, address TEXT, rule TEXT, active INTEGER, last_true REAL, below_since REAL, observed REAL, PRIMARY KEY(chain,address,rule))')
     tracking.schema(con)
     market_caps.schema(con)
+
+
+def preserve_history(con):
+    # Also protects history from an already-running older worker's 30-day
+    # cleanup. Installing this guard does not restart or interrupt any feed.
+    con.execute('''CREATE TRIGGER IF NOT EXISTS gmgn_alarm_history_keep
+        BEFORE DELETE ON gmgn_alerts BEGIN SELECT RAISE(IGNORE); END''')
 
 
 def record_scan(chain, tokens, cfg, stamp):
@@ -172,15 +180,31 @@ def pending_alerts():
 def recent_alerts(limit=3):
     with store.connect() as con:
         schema(con)
-        rows=con.execute('SELECT id,rule,triggered,last_seen,acknowledged,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC').fetchall()
+        return alarm_history(con,limit)
+
+
+def alarm_history(con,limit=None,now=None,include_market_cap=False):
+    """Read original durable alarm events, without a three-record history cap.
+
+    This reader performs no migrations or provider requests. The same rows feed
+    the visible card and its audio bridge; old daily duplicate/equity filtering
+    stays intact. None means all retained history, not the ten-day watch pool.
+    """
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gmgn_alerts'").fetchone():return []
+    maximum=None if limit is None else max(0,int(limit))
+    if maximum==0:return []
+    rows=con.execute('SELECT id,rule,triggered,last_seen,acknowledged,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC')
     result=[];days=set()
     for i,rule,triggered,seen,ack,data in rows:
         token=json.loads(data)
         key=(*tracking.identity(token['chain'],token['address']),tracking.day(triggered))
         if equities.equity_reason(token) or key in days:continue
         days.add(key)
-        result.append(dict(id=i,rule=rule,triggered=triggered,last_seen=seen,acknowledged=bool(ack),token=token))
-    return result[:max(0,min(int(limit),3))]
+        row=dict(id=i,rule=rule,triggered=triggered,last_seen=seen,acknowledged=bool(ack),token=token)
+        if include_market_cap:row.update(market_caps.current(con,token,time.time() if now is None else now))
+        result.append(row)
+        if maximum is not None and len(result)>=maximum:break
+    return result
 
 
 def acknowledge(ids):

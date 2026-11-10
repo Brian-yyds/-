@@ -76,6 +76,21 @@ def test_ranking_changes_are_applied_and_old_legacy_alerts_not_shown(isolated):
     assert len(s.snapshot(clock[0])['records'])==1
 
 
+@pytest.mark.parametrize('restart',[False,True])
+def test_collector_can_renew_after_four_hours_even_when_direction_still_latched(isolated,restart):
+    m=monitor();symbol='COIN00USDT';m.inspect_spike(symbol,106.,int(NOW*1000))
+    isolated[0]=NOW+60
+    m.inspect_spike(symbol,90.,int(isolated[0]*1000))
+    assert len(store.spike_alerts())==1
+    isolated[0]=NOW+s.LIFETIME
+    if restart:m=live.Monitor()
+    m.ticks=ticks(isolated[0]);m.market_valid=set(m.ticks)
+    m.spike_prices[symbol].append((int((isolated[0]-60)*1000),100.))
+    m.inspect_spike(symbol,107.,int(isolated[0]*1000))
+    assert len(store.spike_alerts())==2
+    assert s.snapshot(isolated[0])['tracked'][0]['triggered']==isolated[0]
+
+
 def test_special_snapshot_is_checked_once_per_minute_not_on_every_ui_tick(isolated,monkeypatch):
     import web3_signals as w
     store.put('web3_signal_config',dict(enabled=False))

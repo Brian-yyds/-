@@ -5,6 +5,8 @@ import store
 import data_export
 import blockbeats_monitor as news
 import blockbeats_ui
+import copy_feed
+from types import SimpleNamespace
 
 NOW=1793232000.
 
@@ -14,6 +16,8 @@ def isolated(tmp_path,monkeypatch):
     monkeypatch.setattr(store,'USER',tmp_path)
     monkeypatch.setattr(store,'DB',tmp_path/'news.sqlite')
     monkeypatch.setattr(news.time,'time',lambda:NOW)
+    copy_state=dict(rankings={k:dict(rows=[],updated=0) for k in ['ROI','PNL']},histories={},blocked_until=0,error='')
+    monkeypatch.setattr(copy_feed,'get_monitor',lambda:SimpleNamespace(snapshot=lambda:copy_state))
 
 
 def raw(ident=1,**extra):

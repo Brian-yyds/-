@@ -215,3 +215,37 @@ def test_current_pause_is_respected_even_when_source_config_was_captured_before_
     assert special_count()==0
     store.put('gmgn_config',dict(enabled=True))
     assert len(w.publish(NOW+1)['special_alerts'])==1
+
+
+def test_six_day_old_alarm_outside_visible_fifty_still_matches_with_explicit_origin(isolated):
+    import signal_ui
+    g.record_scan('sol',[token()],g.configuration(),NOW)
+    with store.connect() as con:
+        for i in range(60):
+            other=token('base','0x'+f'{i+1:040x}',symbol=f'NEWER_{i}',launchpad='',launchpad_platform='',volume=1000001)
+            con.execute('INSERT INTO gmgn_alerts(chain,address,rule,triggered,last_seen,data) VALUES (?,?,?,?,?,?)',
+                        ('base',other['address'],'非发射台放量',NOW+1+i,NOW+1+i,json.dumps(other)))
+    stamp=NOW+6*86400
+    accept(w.normalize(raw(signalId=700,signalTriggerTime=stamp*1000),'sol',stamp),stamp)
+    view=w.dashboard()
+    assert len(view['gmgn_alerts'])==50 and all(row['token']['address']!=ADDRESS for row in view['gmgn_alerts'])
+    assert len(view['special_alerts'])==1
+    event=view['special_alerts'][0]
+    assert event['gmgn_alert_id']==1 and event['gmgn_triggered']==NOW and event['triggered']==stamp
+    markup=signal_ui.special_card(view)
+    assert '历史GMGN匹配' in markup and 'GMGN原报 '+signal_ui.clock(NOW) in markup
+    assert '记录市值' in markup
+    with store.connect() as con:assert con.execute('SELECT COUNT(*) FROM gmgn_alerts').fetchone()[0]==61
+
+
+def test_repeat_qualifying_scan_preserves_alarm_snapshot_and_updates_only_live_caches(isolated):
+    original=token(volume=200001,market_cap=123456)
+    g.record_scan('sol',[original],g.configuration(),NOW)
+    g.record_scan('sol',[token(volume=900000,market_cap=777777)],g.configuration(),NOW+300)
+    with store.connect() as con:
+        row=con.execute('SELECT data,last_seen FROM gmgn_alerts').fetchone()
+        evidence=json.loads(con.execute('SELECT data FROM gmgn_alarm_evidence').fetchone()[0])
+        current=json.loads(con.execute('SELECT token FROM gmgn_watch').fetchone()[0])
+        assert json.loads(row[0])['volume']==200001 and row[1]==NOW+300
+        assert evidence['volume']==200001 and current['volume']==900000
+        assert con.execute('SELECT market_cap FROM gmgn_market_caps').fetchone()[0]==777777

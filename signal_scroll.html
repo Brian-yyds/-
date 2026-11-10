@@ -4,7 +4,7 @@
   if (window.__workbenchSignalScrollV1) return;
   window.__workbenchSignalScrollV1 = true;
   const positions = new Map();
-  const selector = '.signal-dashboard .signal-list,.signal-dashboard .special-list';
+  const selector = '.signal-dashboard [data-signal-kind="web3"] .signal-list';
   const kind = node => node.closest('[data-signal-kind]')?.getAttribute('data-signal-kind');
   document.addEventListener('scroll', event => {
     const node = event.target;
@@ -30,5 +30,62 @@
     });
   });
   observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+<script>
+// Track deliberate reading only. DOM replacement scrolls must not erase it.
+(() => {
+  if (window.__workbenchAlarmScrollV3) return;
+  window.__workbenchAlarmScrollV3 = true;
+  const selector = '[data-signal-kind="gmgn"] .signal-list,[data-signal-kind="special"] .special-list,[data-signal-kind="copy"] .copy-scroll';
+  const positions = new Map();
+  const kind = node => node.closest('[data-signal-kind]')?.getAttribute('data-signal-kind');
+  let reading = null;
+  let scheduled = false;
+  const remember = node => {
+    if (!node.isConnected) return;
+    const box = node.getBoundingClientRect();
+    const anchor = [...node.querySelectorAll('[data-entry-key]')].find(row => row.getBoundingClientRect().bottom > box.top + 1);
+    positions.set(kind(node), { top: node.scrollTop, key: anchor?.getAttribute('data-entry-key'),
+      offset: anchor ? anchor.getBoundingClientRect().top - box.top : 0 });
+    node.setAttribute('data-history-saved-top',String(node.scrollTop));
+  };
+  for (const name of ['wheel','keydown','pointerdown','touchstart']) {
+    document.addEventListener(name, event => {
+      const node = event.target instanceof Element ? event.target.closest(selector) : null;
+      if (!node) return;
+      reading = node;
+      requestAnimationFrame(() => { if (reading === node) remember(node); });
+    }, {capture:true, passive:true});
+  }
+  document.addEventListener('scroll', event => {
+    if (event.target === reading && reading?.isConnected) remember(reading);
+  }, {capture:true, passive:true});
+  const restore = () => {
+    scheduled = false;
+    document.querySelectorAll(selector).forEach(node => {
+      node.setAttribute('data-history-scroll','v3');
+      if (node === reading) return;
+      const saved = positions.get(kind(node));
+      if (!saved) {
+        // Initial empty-to-filled tables can trigger browser scroll anchoring.
+        // Until the reader acts, the new opening panel follows its newest row.
+        if (kind(node) === 'copy' && node.scrollTop) node.scrollTop = 0;
+        return;
+      }
+      const anchor = saved.top ? [...node.querySelectorAll('[data-entry-key]')].find(row => row.getAttribute('data-entry-key') === saved.key) : null;
+      const target = anchor ? node.scrollTop + anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - saved.offset : saved.top;
+      if (Math.abs(node.scrollTop-target)>1) node.scrollTop = target;
+    });
+  };
+  const observer = new MutationObserver(records => {
+    // Streamlit mutates unrelated status/navigation nodes during scrolling too.
+    // Only invalidating this reader's actual list should end the user gesture.
+    if (reading && (!reading.isConnected || records.some(record =>
+      record.target === reading || reading.contains(record.target)))) reading = null;
+    if (!scheduled) { scheduled = true; requestAnimationFrame(restore); }
+  });
+  observer.observe(document.body, {childList:true, subtree:true});
+  restore();
 })();
 </script>

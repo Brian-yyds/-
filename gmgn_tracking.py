@@ -76,8 +76,10 @@ def record_scan(chain,tokens,cfg,stamp):
                     else:con.execute('UPDATE gmgn_watch SET last_alert=? WHERE chain=? AND address=?',(stamp,chain_key,address))
                     sent=True
                 if not sent:
-                    con.execute('UPDATE gmgn_alerts SET last_seen=?,data=? WHERE id=(SELECT MAX(id) FROM gmgn_alerts WHERE chain=? AND address=?)',
-                                (stamp,json.dumps(token,ensure_ascii=False),chain_key,address))
+                    # Current observations belong to the watch/cap caches. Keep
+                    # the accepted alarm payload unchanged for later matching.
+                    con.execute('UPDATE gmgn_alerts SET last_seen=? WHERE id=(SELECT MAX(id) FROM gmgn_alerts WHERE chain=? AND address=?)',
+                                (stamp,chain_key,address))
                 active=True;last_true=stamp;below=None
             else:
                 valid=token.get('volume') is not None and g.launch_kind(token)!='unknown'
@@ -93,7 +95,8 @@ def record_scan(chain,tokens,cfg,stamp):
             con.execute('UPDATE gmgn_watch SET token=?,last_seen=? WHERE chain=? AND address=?',
                         (json.dumps(token,ensure_ascii=False),stamp,chain_key,address))
             if not watch and sent:g.market_caps.observe(con,token,stamp)
-        con.execute('DELETE FROM gmgn_alerts WHERE acknowledged=1 AND triggered<? AND id NOT IN (SELECT id FROM gmgn_alerts ORDER BY triggered DESC,id DESC LIMIT 3)',(stamp-30*86400,))
+        # Alarm history is permanent. The independent ten-day watch pool still
+        # expires as before; acknowledging an event must not delete its history.
         # The originating alarm, its immutable proof and cross-source match
         # commit together; a crash cannot leave a half-recorded match.
         from web3_signals import record_gmgn_scan

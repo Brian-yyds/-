@@ -193,6 +193,7 @@ def test_visible_alarm_time_stays_at_original_trigger_when_data_updates(isolated
     g.record_scan('sol',[token(volume=280000,renowned_count=2,smart_degen_count=None)],g.DEFAULTS,NOW+60)
     record=g.recent_alerts()[0]
     assert record['triggered']==NOW and record['last_seen']==NOW+60
+    assert record['token']['volume']==200001
     original=datetime.fromtimestamp(NOW,g.ZONE)
     later=datetime.fromtimestamp(NOW+60,g.ZONE)
     markup=gmgn_alarm_card()

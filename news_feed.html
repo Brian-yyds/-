@@ -3,6 +3,17 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#b8c7d1;background:#141b23}
 .news-frame{height:100%;display:flex;flex-direction:column;background:#1c2934;border:1px solid #3a4c5c;border-radius:12px;overflow:hidden}
+.reader-tabs{display:flex;gap:6px;padding:8px 10px;background:#18232d;border-bottom:1px solid #324754;flex:none}
+.reader-tabs button,.copy-filter button{border:1px solid #344d5d;border-radius:6px;padding:7px 14px;color:#8fa8b9;background:transparent;cursor:pointer;font-family:inherit;font-size:12px}
+.reader-tabs button{flex:1;font-size:14px;font-weight:650}.reader-tabs button[aria-selected="true"],.copy-filter button[aria-pressed="true"]{color:#b3cdca;background:#2b414a;border-color:#56777c}
+.reader-pane{display:flex;flex:1;min-height:0;flex-direction:column}.reader-pane[hidden]{display:none!important}
+.copy-filter{display:flex;gap:5px;padding:9px 12px;flex-wrap:wrap}.copy-filter button{font-size:11px;padding:5px 8px}
+#copy-scroll{overflow-anchor:none;scroll-behavior:auto}
+.copy-entry{padding:14px 0 14px 13px;border-bottom:1px solid #2c414d;position:relative;font-variant-numeric:tabular-nums}.copy-entry:before{content:"";position:absolute;width:5px;height:5px;border-radius:50%;background:#638e9e;left:0;top:20px}
+.copy-trader-line{display:flex;align-items:baseline;justify-content:space-between;gap:5px 10px;flex-wrap:wrap;margin-bottom:8px}.copy-trader-line a{color:#98b4c2;font-size:13px;font-weight:600;text-decoration:none;overflow-wrap:anywhere}.copy-trader-line a.featured-name{color:#d58f99}.copy-trader-line time{font-size:10px;color:#819aab}
+.copy-trade-main{display:flex;align-items:baseline;justify-content:space-between;gap:7px 10px;flex-wrap:wrap;font-size:16px;color:#b0c7cc}.copy-trade-main b{font-weight:650;font-size:21px;color:#b5cbd1}.copy-trade-main small{font-size:10px;color:#8aa1b0}.copy-direction{font-size:13px;margin-left:7px;color:#99b5c7}.copy-direction.long{color:#94bba4}.copy-direction.short{color:#c4959f}
+.copy-entry-meta{font-size:10px;color:#8198a9;margin-top:8px;display:flex;justify-content:space-between;gap:5px 12px;flex-wrap:wrap}.copy-error{color:#c2aa84!important}
+.copy-size{display:flex;justify-content:space-between;align-items:baseline;gap:7px 12px;flex-wrap:wrap;margin-top:9px;color:#90a9b8;font-size:12px;font-variant-numeric:tabular-nums}.copy-size b{font-size:18px;font-weight:650;color:#bcb598}.copy-size small{font-size:10px;color:#839bab;margin-left:4px}
 .news-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 14px 10px;border-bottom:1px solid #263b4f;background:linear-gradient(115deg,#22343f,#1c2a35)}
 .news-brand{display:flex;gap:8px;align-items:center}.news-mark{font-weight:850;font-size:18px;letter-spacing:-2px;color:#91b5c7;background:#203f50;border:1px solid #396176;border-radius:7px;padding:4px 7px}.news-heading h2{font-size:17px;margin:0;font-weight:750}.news-heading small{display:block;color:#8aa2b7;font-size:10px;margin-top:3px;letter-spacing:.07em}
 .reading-mode{font-size:11px;color:#94b6c8;white-space:nowrap}a:focus-visible,button:focus-visible{outline:2px solid #8db4c6;outline-offset:3px}
@@ -14,11 +25,21 @@
 .news-title{font-size:15px;line-height:1.6;font-weight:650;text-decoration:none;color:#94b3ad;overflow-wrap:anywhere}.news-title:hover{color:#abc6bf}.news-content{font-size:13px;color:#9dafbd;line-height:1.85;margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere}
 .news-footer{border-top:1px solid #293f52;padding:9px 14px;color:#7895aa;font-size:10px;line-height:1.5;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}.news-empty{color:#8fa7bc;font-size:13px;line-height:1.8;padding:30px 0}.news-footer strong{color:#aec9d8;font-weight:500}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
-</style></head><body><section class="news-frame" aria-label="律动快讯信息流">
+</style></head><body><section class="news-frame" aria-label="快讯与跟单信息流">
+<nav class="reader-tabs" role="tablist" aria-label="信息流切换"><button type="button" id="tab-news" role="tab" aria-selected="true" aria-controls="news-pane">律动快讯</button><button type="button" id="tab-copy" role="tab" aria-selected="false" aria-controls="copy-pane">跟单动态</button></nav>
+<div class="reader-pane" id="news-pane" role="tabpanel" aria-labelledby="tab-news">
 <header class="news-heading"><div class="news-brand"><span class="news-mark" aria-hidden="true">BB</span><div><h2>律动快讯</h2><small>BLOCKBEATS · 中文信息流</small></div></div><span class="reading-mode">手动阅读</span></header>
 <div class="news-state"><b id="source-status">等待采集</b><span id="updated"></span></div>
 <div id="news-scroll" class="news-scroll" role="feed" aria-label="快讯列表，可手动上下滚动" tabindex="0"></div>
 <footer class="news-footer"><span>每15分钟获取</span><strong>手动浏览 · 保留阅读位置</strong></footer>
+</div>
+<div class="reader-pane" id="copy-pane" role="tabpanel" aria-labelledby="tab-copy" hidden>
+<header class="news-heading"><div class="news-brand"><span class="news-mark" aria-hidden="true">CT</span><div><h2>跟单操作动态</h2><small>币安公开记录 · 精选与聪明钱</small></div></div><span class="reading-mode">开仓 / 平仓</span></header>
+<div class="news-state" id="copy-state"><b id="copy-status">正在采集</b><span id="copy-updated"></span></div>
+<div class="copy-filter" aria-label="操作动态范围"><button type="button" data-filter="all" aria-pressed="true">全部动态</button><button type="button" data-filter="selected" aria-pressed="false">精选</button><button type="button" data-filter="smart" aria-pressed="false">聪明钱</button><button type="button" data-filter="favorite" aria-pressed="false">熬鹰资本</button></div>
+<div id="copy-scroll" class="news-scroll" role="feed" aria-label="跟单操作信息流，手动上下滚动" tabindex="0"></div>
+<footer class="news-footer"><span>榜单合并采集 · 操作分批轮询</span><strong title="开平仓包含加减仓；时间为成交更新时刻；公开接口可能延迟或缺失。">北京时间 · 成交均价 · 手动阅读</strong></footer>
+</div>
 </section><script type="application/json" id="news-data">__NEWS_DATA__</script><script>
 (()=>{
  const data=JSON.parse(document.getElementById('news-data').textContent);
@@ -43,7 +64,7 @@
    scroller.append(card);
  }
  if(!data.items.length)scroller.append(make('p','news-empty','快讯采集启动后会在这里自动出现。'));
- const state=document.querySelector('.news-state');
+ const state=document.querySelector('#news-pane .news-state');
  function sourceState(){
    const stale=!data.last_success||Date.now()/1000-data.last_success>900;
    state.classList.toggle('is-delayed',stale||data.error);
@@ -55,15 +76,76 @@
  const positionStorage='perp-workbench.news.position';
  let saveTimer;
  function savePosition(){
+   if(document.getElementById('news-pane').hidden)return;
    try{const top=scroller.getBoundingClientRect().top,anchor=[...scroller.children].find(e=>e.dataset.newsId&&e.getBoundingClientRect().bottom>top+1);
      if(anchor)sessionStorage.setItem(positionStorage,JSON.stringify({id:anchor.dataset.newsId,offset:Math.round(anchor.getBoundingClientRect().top-top),atTop:scroller.scrollTop<=1}));
    }catch{}
  }
- requestAnimationFrame(()=>{try{const savedPosition=JSON.parse(sessionStorage.getItem(positionStorage)||'null');
+ function restoreNewsPosition(){requestAnimationFrame(()=>{try{const savedPosition=JSON.parse(sessionStorage.getItem(positionStorage)||'null');
    if(savedPosition&&!savedPosition.atTop){const anchor=[...scroller.children].find(e=>e.dataset.newsId===savedPosition.id);
      if(anchor)scroller.scrollTop+=anchor.getBoundingClientRect().top-scroller.getBoundingClientRect().top-Number(savedPosition.offset||0)}
- }catch{}});
+ }catch{}})}
  addEventListener('pagehide',savePosition);
  scroller.addEventListener('scroll',()=>{clearTimeout(saveTimer);saveTimer=setTimeout(savePosition,120)},{passive:true});
+ const copy=data.copy||{rankings:{ROI:{rows:[]},PNL:{rows:[]}},items:[]};
+ const copyScroll=document.getElementById('copy-scroll');
+ let filter='all',view='news';
+ try{filter=sessionStorage.getItem('perp-workbench.copy.filter')||'all';view=sessionStorage.getItem('perp-workbench.reader.view')||'news'}catch{}
+ if(!['all','selected','smart','favorite'].includes(filter))filter='all';
+ const formatTime=stamp=>new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Shanghai',hour12:false}).format(stamp*1000);
+ const smartLink=id=>/^\d{10,25}$/.test(id)?'https://www.binance.com/zh-CN/smart-money/profile/'+id:'';
+ const leadLink=id=>/^\d{10,25}$/.test(id)?'https://www.binance.com/zh-CN/copy-trading/lead-details/'+id:'';
+ let copyRestoring=false,copyRenderVersion=0;
+ function copySave(){
+   if(copyRestoring||document.getElementById('copy-pane').hidden)return;
+   const top=copyScroll.getBoundingClientRect().top,anchor=[...copyScroll.children].find(e=>e.dataset.eventId&&e.getBoundingClientRect().bottom>top+1);
+   try{if(anchor)sessionStorage.setItem('perp-workbench.copy.position.'+filter,JSON.stringify({id:anchor.dataset.eventId,offset:anchor.getBoundingClientRect().top-top,atTop:copyScroll.scrollTop<=1}))}catch{}
+ }
+ function renderCopy(resetToLatest=false){
+   copyRestoring=true;
+   const renderVersion=++copyRenderVersion;
+   copyScroll.replaceChildren();
+   const rows=copy.items.filter(r=>filter==='all'||filter==='selected'&&r.selected||filter==='smart'&&r.smart_id||filter==='favorite'&&r.trader_id===copy.favorite).slice(0,500);
+   for(const row of rows){
+     const entry=make('article','copy-entry');entry.dataset.eventId=row.id;
+     const line=make('div','copy-trader-line'),link=make('a',row.trader_id===copy.favorite?'featured-name':'',row.name),url=filter==='smart'?smartLink(row.smart_id):leadLink(row.trader_id);
+     if(url){link.href=url;link.target='_blank';link.rel='noopener noreferrer'}line.append(link,make('time','',formatTime(row.time/1000)));entry.append(line);
+     const main=make('div','copy-trade-main'),identity=make('span','',row.symbol),direction=make('span','copy-direction'+(row.direction==='开多'?' long':row.direction==='开空'?' short':''),row.direction);
+     const quote=row.quote_asset||'USDT';
+     identity.append(direction);const price=make('span');price.append(make('b','',row.price),make('small','',' '+quote));main.append(identity,price);entry.append(main);
+     const size=make('div','copy-size'),sizeLabel=make('span','',row.direction.startsWith('开')?'开仓金额':'平仓金额'),sizeValue=make('span');
+     sizeValue.append(make('b','',row.notional_display||'—'),make('small','',row.notional_display?quote:'待同步'));
+     size.title=row.quantity?'本笔成交数量 '+row.quantity+' × 成交均价 '+row.price+' '+quote+'；为本次操作金额，不代表当前剩余总仓位':'旧缓存尚未保存成交数量，下一次正常采集后补齐金额';
+     size.append(sizeLabel,sizeValue);entry.append(size);
+     const badges=['公开跟单操作'];if(row.selected)badges.push('精选');if(row.smart_rank)badges.push('聪明钱 #'+row.smart_rank);if(row.trader_id===copy.favorite)badges.push('重点带单员');
+     const meta=make('div','copy-entry-meta');meta.append(make('span','',badges.join(' · ')),make('span',row.delayed?'copy-error':'',row.delayed?'数据延迟 · 保留记录':'采集 '+formatTime(row.observed).slice(-8)));entry.append(meta);copyScroll.append(entry);
+   }
+   if(!rows.length)copyScroll.append(make('p','news-empty',copy.error?'采集暂缓，等待恢复公开记录。':filter==='smart'?'尚无已核验的公开开仓数据。聪明钱最新操作需要登录；正在核对本人公开关联的跟单项目。':'本范围暂无可展示的公开操作；空列表不代表没有持仓。'));
+   document.querySelectorAll('[data-filter]').forEach(e=>e.setAttribute('aria-pressed',String(e.dataset.filter===filter)));
+   if(resetToLatest){
+     copyScroll.scrollTo({top:0,behavior:'instant'});
+     try{sessionStorage.setItem('perp-workbench.copy.position.'+filter,JSON.stringify({atTop:true}))}catch{}
+   }
+   requestAnimationFrame(()=>{
+     if(renderVersion!==copyRenderVersion)return;
+     copyScroll.scrollTop=0;
+     if(!resetToLatest){try{const saved=JSON.parse(sessionStorage.getItem('perp-workbench.copy.position.'+filter)||'null');if(saved&&!saved.atTop){const anchor=[...copyScroll.children].find(e=>e.dataset.eventId===saved.id);if(anchor)copyScroll.scrollTop+=anchor.getBoundingClientRect().top-copyScroll.getBoundingClientRect().top-Number(saved.offset||0)}}catch{}}
+     copyRestoring=false;copySave();
+   });
+ }
+ document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{copySave();filter=button.dataset.filter;try{sessionStorage.setItem('perp-workbench.copy.filter',filter)}catch{}renderCopy(true)}));
+ copyScroll.addEventListener('scroll',copySave,{passive:true});addEventListener('pagehide',copySave);
+ const status=document.getElementById('copy-status');status.textContent='合并 '+copy.traders+'人 · 精选 '+(copy.curated||[]).length+'人 · 聪明钱 '+((copy.smart||{}).trackable||[]).length+'/50';
+ status.title='待首轮 '+copy.pending+'人 · 私密 '+copy.private+'人 · 查询异常 '+copy.errors+'人 · 成功但无公开操作 '+copy.empty+'人；合并最新500条动态，保留精选和已验证聪明钱操作';
+ if(copy.error){status.textContent=copy.error;status.className='copy-error'}
+ const rankUpdated=Math.min(...Object.values(copy.rankings).map(r=>r.updated||0));document.getElementById('copy-updated').textContent=rankUpdated?'榜单 '+formatTime(rankUpdated).slice(-8):'获取榜单中';
+ let copyRendered=false;
+ let readerInitialized=false;
+ function showView(next,userClick=false){if(readerInitialized&&next===view){if(userClick&&view==='copy')renderCopy(true);return}if(readerInitialized){savePosition();copySave()}view=next==='copy'?'copy':'news';document.getElementById('news-pane').hidden=view!=='news';document.getElementById('copy-pane').hidden=view!=='copy';
+   document.getElementById('tab-news').setAttribute('aria-selected',String(view==='news'));document.getElementById('tab-copy').setAttribute('aria-selected',String(view==='copy'));
+   try{sessionStorage.setItem('perp-workbench.reader.view',view)}catch{}
+   if(view==='copy'&&(!copyRendered||userClick)){renderCopy(userClick);copyRendered=true}else if(view==='news')restoreNewsPosition();readerInitialized=true;
+ }
+ document.getElementById('tab-news').addEventListener('click',()=>showView('news',true));document.getElementById('tab-copy').addEventListener('click',()=>showView('copy',true));showView(view);
 })();
 </script></body></html>

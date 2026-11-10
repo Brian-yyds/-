@@ -185,6 +185,9 @@ def set_spike_episode(symbol,direction,active,event_time,change=None,reference=N
         if previous and event_time<previous[1]:
             return False
         created=bool(active and not (previous and previous[0]))
+        if active and reference and '24h成交额前20' in reference.get('basis',''):
+            import spike_monitor
+            created=not spike_monitor.active_records(con,event_time/1000,symbol)
         if created:
             con.execute("INSERT INTO spike_alerts(time,symbol,direction,change,base_price,price,base_time,event_time,basis) VALUES (?,?,?,?,?,?,?,?,?)",
                         (event_time/1000,symbol,direction,change,reference['price'],price,reference['time'],event_time,reference['basis']))

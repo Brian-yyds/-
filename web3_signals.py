@@ -13,6 +13,7 @@ ENDPOINT='https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/
 CHAINS={'sol':'CT_501','bsc':'56'}
 POLL_SECONDS=60
 PUBLISH_SECONDS=60
+DISPLAY_LIMIT=100
 WEB3_FRESH=150
 GMGN_FRESH=180
 ACTIVE={'active','valid'}
@@ -218,7 +219,7 @@ def reconcile(con,now,cfg=None):
 
 def special_rows(con):
     return [dict(id=i,triggered=stamp,**json.loads(data)) for i,stamp,data in
-            con.execute('SELECT id,triggered,data FROM special_alerts ORDER BY triggered DESC,id DESC LIMIT 20')]
+            con.execute('SELECT id,triggered,data FROM special_alerts ORDER BY triggered DESC,id DESC LIMIT ?',(DISPLAY_LIMIT,))]
 
 
 def record_wallet_batch(chain,rows,stamp,chain_health):
@@ -275,16 +276,9 @@ def publish(now=None):
                 if not rule:continue
                 candidates.append(dict(token=tok,observed=stamp,rule=rule))
         special=special_rows(con)
-        # Preserve the GMGN alarm contract: three original events, not ranking updates.
-        alarms=[];seen=set()
-        for ident,rule,triggered,observed,data in con.execute('SELECT id,rule,triggered,last_seen,data FROM gmgn_alerts ORDER BY triggered DESC,id DESC LIMIT 100'):
-            tok=json.loads(data);key=(*t.identity(tok['chain'],tok['address']),t.day(triggered))
-            if key in seen or g.equities.equity_reason(tok):continue
-            seen.add(key);alarms.append(dict(id=ident,triggered=triggered,last_seen=observed,token=tok,rule=rule,
-                                            **g.market_caps.current(con,tok,now)))
-            if len(alarms)==3:break
+        alarms=g.alarm_history(con,limit=DISPLAY_LIMIT,now=now,include_market_cap=True)
         display_rows=sorted(rows,key=lambda r:(not(web_enabled and signal_is_current(r,health,now)),-r['triggered']))
-        value=dict(generated_at=now,gmgn_alerts=alarms,web3_signals=display_rows[:50],special_alerts=special,
+        value=dict(generated_at=now,gmgn_alerts=alarms,web3_signals=display_rows[:DISPLAY_LIMIT],special_alerts=special,
             web3_health=health,web3_enabled=web_enabled,gmgn_health=store_value(con,'gmgn_market',{}),
             current_gmgn_count=len(candidates),current_web3_count=len(current),
             rules=dict(graduate_volume=cfg['graduate_volume'],other_volume=cfg['other_volume'],kol_count=cfg['kol_count'],
@@ -306,7 +300,21 @@ def store_value(con,key,default):
 
 
 def dashboard():
-    return store.get('signal_dashboard',{})
+    import gmgn_monitor as g
+    now=time.time()
+    with store.connect() as con:
+        value=store_value(con,'signal_dashboard',{})
+        # Sound used to read the live ledger while this card waited for a
+        # 60-second publication. Overlay only GMGN from committed rows, leaving
+        # the Web3 snapshot, source cadence and special matching policy intact.
+        value['gmgn_alerts']=g.alarm_history(con,limit=DISPLAY_LIMIT,now=now,include_market_cap=True)
+        # Read the latest retained special records too, even while an older
+        # background publisher still emits its previous 20-item snapshot.
+        if con.execute("SELECT 1 FROM sqlite_master WHERE name='special_alerts' AND type='table'").fetchone():
+            value['special_alerts']=special_rows(con)
+        value['gmgn_health']=store_value(con,'gmgn_market',{})
+        value['gmgn_view_read_at']=now
+    return value
 
 
 class Monitor:

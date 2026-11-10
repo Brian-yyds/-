@@ -168,8 +168,8 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 .alert-panels .gmgn-hour-scroll{height:calc(var(--panel-body) - 44px)}
 .volume-bars{min-width:840px}.volume-value,.volume-all-value{font-size:clamp(8px,1cqi,10px)}.volume-day>span{font-size:clamp(8px,.95cqi,9px)}
 .st-key-dashboard{margin-top:0}.st-key-dashboard [data-testid="stColumn"]{min-width:0}
-.st-key-news-column [data-testid="stElementContainer"]:has(>iframe[title="律动快讯信息流"]){height:max(600px,calc(100dvh - 75px))!important;flex-basis:auto!important}
-.st-key-news-column iframe[title="律动快讯信息流"]{height:100%!important}
+.st-key-news-column [data-testid="stElementContainer"]:has(>iframe[title="快讯与跟单信息流"]){height:max(600px,calc(100dvh - 75px))!important;flex-basis:auto!important}
+.st-key-news-column iframe[title="快讯与跟单信息流"]{height:100%!important}
 @media(max-width:1250px){.st-key-dashboard [data-testid="stHorizontalBlock"]{flex-direction:column}.st-key-dashboard [data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important}}
 @container market-panel (max-width:600px){.market-rankings.rankings-grid{grid-template-columns:1fr}.alert-panels{grid-template-columns:1fr}.live-line .pending-label{max-width:none}}
 /* Compact navigation stays accessible through a small menu in the title row. */
@@ -205,7 +205,7 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 .st-key-sound-control [data-testid="stElementContainer"]{margin:0!important}.st-key-sound-control iframe{height:30px}
 .st-key-sound-events{display:none!important}
 [data-testid="stLayoutWrapper"]:has(>.st-key-sound-control){display:contents!important}
-[data-testid="stLayoutWrapper"]:has(.st-key-sound-events){display:none!important}
+[data-testid="stLayoutWrapper"]:has(> .st-key-sound-events){display:none!important}
 @media(max-width:640px){.st-key-sound-control{right:48px;width:135px!important}.screen-heading h1{font-size:16px!important}}
 /* Two large entries replace the dense six-column table. Keep every rank in
    the scroll region, with supporting returns below the primary 4h figure. */
@@ -241,6 +241,17 @@ a.contract-link:hover{color:#8fb6a0!important;text-decoration:underline!importan
 .alert-panels .gmgn-alarm-time{font-size:12px;line-height:1.5}
 @container market-panel (max-width:950px){.ranking-primary strong{font-size:25px}.ranking-name{font-size:14px}.ranking-turnover b{font-size:17px}.ranking-footer{gap:4px 7px}.ranking-secondary{flex-direction:column;gap:1px;align-items:flex-end}.ranking-secondary b{font-size:11px}}
 @media(max-width:1250px){.alert-panels{--panel-body:360px}.alert-panels .history-card{height:var(--panel-body);overflow-y:auto}.alert-panels .gmgn-hour-table td{height:48px}}
+.copy-trader-card{margin-top:10px;max-width:760px;min-width:0;background:#1c2631;border:1px solid #344958;border-radius:10px;overflow:hidden;font-variant-numeric:tabular-nums}
+.copy-title{padding:9px 12px;display:flex;justify-content:space-between;align-items:center;gap:6px 12px;flex-wrap:wrap;border-bottom:1px solid #34424f}
+.copy-title a{color:#9eb8c5!important;text-decoration:none!important;font-size:15px;font-weight:650}.copy-title span{font-size:10px}
+.copy-scroll{max-height:176px;overflow:auto;scrollbar-width:thin;scrollbar-color:#3b5364 #1c2631}
+.copy-scroll table{width:100%;border-collapse:collapse;margin:0!important;font-size:13px;white-space:nowrap}
+.copy-scroll th,.copy-scroll td{padding:7px 12px!important;border:0!important;border-bottom:1px solid #2d3b47!important;text-align:left!important}
+.copy-scroll th{position:sticky;top:0;background:#22303b;color:#859eaf;font-size:11px;font-weight:400}.copy-scroll td{color:#a9beca}
+.copy-scroll td:last-child,.copy-scroll th:last-child{text-align:right!important}.copy-scroll b{font-size:16px;color:#b9cbd3;font-weight:650}
+.copy-scroll small{font-size:11px}.copy-scroll td small:not(.up-accent):not(.down-accent){color:#849dab}
+.copy-note{padding:6px 12px;color:#8298a8;font-size:10px}.copy-empty{padding:18px 12px;color:#8fa5b4;font-size:12px}
+.copy-scroll:focus-visible{outline:1px solid #90afc6;outline-offset:-2px}
 </style>'''
 
 
@@ -467,9 +478,9 @@ def top20_spike_card(now=None):
         body.append(f'<li class="ranking-entry" data-tracked-symbol="{row["symbol"]}"><div class="ranking-main"><div class="ranking-name">'+coin(row['symbol'])+
             f'</div><div class="ranking-primary" title="{html.escape(tip,quote=True)}"><small>{status} · 首报基准</small><strong class="{color}">{value}</strong></div></div>'
             f'<div class="ranking-footer"><span>近15m {window_text}</span><span>现价 {price_text}</span></div>'
-            f'<div class="ranking-footer"><time>首报 {clock(row["triggered"]*1000)}</time><span>触发 {row["trigger_change"]:+.2f}%</span></div></li>')
+            f'<div class="ranking-footer"><time>首报 {clock(row["triggered"]*1000)}</time><span>触发 {row["trigger_change"]:+.2f}% · 到期 {clock(row["expires_at"]*1000)}</span></div></li>')
     content='<ol class="ranking-list">'+''.join(body)+'</ol>' if body else '<div class="signal-empty"><strong>暂无超过5%的异动</strong>24小时 USDT 成交额前20名<br>15分钟内上涨或下跌超过5%时提醒</div>'
-    return '<section class="rank-card spike-mini"><div class="rank-title"><h2>15分钟异动</h2><span>同币一条 · 实时跟踪</span></div><div class="rank-scroll" role="region" aria-label="15分钟异动警报" tabindex="0">'+content+'</div></section>'
+    return '<section class="rank-card spike-mini"><div class="rank-title"><h2>15分钟异动</h2><span>同币4小时一条 · 到期移除</span></div><div class="rank-scroll" role="region" aria-label="15分钟异动警报" tabindex="0">'+content+'</div></section>'
 
 
 @st.fragment(run_every='3s')
@@ -505,15 +516,22 @@ def board(scope,search,oi_direction,asset_scope='全部'):
     stock_count=len(stock_symbols)
     commodity_count=len(commodity_symbols)
     coverage=f'全市场 {len(rows)} 合约 · 加密 {len(rows)-stock_count-commodity_count} / 股票 {stock_count} / 大宗 {commodity_count}'
-    st.markdown(f'<div class="live-line"><span class="{css}">{state}</span><span>{coverage}</span><span>排行 4 小时</span><span>{datetime.now(ZONE):%H:%M:%S}</span></div>',unsafe_allow_html=True)
-    st.markdown(quick_prices(),unsafe_allow_html=True)
+    live_line=f'<div class="live-line"><span class="{css}">{state}</span><span>{coverage}</span><span>排行 4 小时</span><span>{datetime.now(ZONE):%H:%M:%S}</span></div>'
+    focus=quick_prices()
     shown=[r for r in rows if (scope!='仅重点' or r['priority']) and search.upper().strip() in r['symbol']
            and (asset_scope=='全部' or r['asset_type']=={'股票':'stock','加密货币':'crypto','大宗':'commodity'}.get(asset_scope))]
     cards=''.join(ranking_card(monitoring.ranked(shown,kind)[:30],title,kind)
                   for title,kind in [('上涨榜','up'),('下跌榜','down')])
     cards+=top20_spike_card()
     from signal_ui import panels
-    st.markdown('<div class="market-panel"><div class="rankings-grid market-rankings">'+cards+'</div>'+panels()+'</div>',unsafe_allow_html=True)
+    from web3_signals import dashboard as signal_dashboard
+    signal_snapshot=signal_dashboard()
+    # Emit one complete frame. Sending the focus strip before the lower panels
+    # lets fragment refreshes temporarily leave only prices on the screen.
+    frame=live_line+focus+'<div class="market-panel">'+panels(snapshot=signal_snapshot)+'<div class="rankings-grid market-rankings">'+cards+'</div></div>'
+    st.markdown(frame,unsafe_allow_html=True)
+    from sound_ui import sound_events
+    sound_events(signal_snapshot.get('gmgn_alerts',[]))
     # Rankings are a viewing filter; they must never hide market-wide alarms.
     if not alive or not scanner_alive:
         st.warning('采集服务正在连接或心跳已过期；恢复连接后自动更新。')
@@ -523,9 +541,8 @@ def monitor_page():
     view=store.get('monitor_view',{})
     scope='加密、币股/ETF与大宗永续'
     st.markdown('<div class="screen-heading"><h1>全市场异动监控</h1><span>币安 USDT · '+scope+'</span><details class="desk-menu"><summary aria-label="页面导航">☰</summary><nav aria-label="页面导航"><a href="/" target="_self">监控面板</a><a href="/settings" target="_self">设置与调试</a></nav></details></div>',unsafe_allow_html=True)
-    from sound_ui import sound_control, sound_events
+    from sound_ui import sound_control
     sound_control()
-    sound_events()
     from signal_ui import preserve_scroll
     preserve_scroll()
     from blockbeats_ui import news_panel

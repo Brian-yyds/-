@@ -45,6 +45,16 @@ def special_count():
     with store.connect() as con:return con.execute('SELECT COUNT(*) FROM special_alerts').fetchone()[0]
 
 
+def test_web3_hundred_display_retains_raw_rows(isolated):
+    for i in range(121):
+        save_signal(w.normalize(raw(signalId=i+1,signalTriggerTime=(NOW-i)*1000),'sol',NOW))
+    view=w.publish(NOW)
+    assert len(view['web3_signals'])==100
+    assert view['web3_signals'][0]['triggered']==NOW
+    assert view['web3_signals'][-1]['triggered']==NOW-99
+    with store.connect() as con:assert con.execute('SELECT COUNT(*) FROM wallet_signals').fetchone()[0]==121
+
+
 def test_current_data_intersection_in_both_arrival_orders_and_daily_dedup(isolated):
     save_signal()
     assert not w.publish(NOW)['special_alerts']  # No synthetic GMGN event from a ticker name.
@@ -178,5 +188,11 @@ def test_main_screen_removes_old_sections_and_preserves_focus(isolated):
     text=''.join(str(x.value) for x in app.markdown)
     for label in ('上涨榜','下跌榜','GMGN 警报','Web3 钱包信号','特级警报','重点监控','15分钟异动'):
         assert label in text
+    # One refresh must deliver focus prices and every lower panel together,
+    # rather than exposing a half-drawn dashboard between fragment deltas.
+    frames=[str(x.value) for x in app.markdown if 'class="live-line"' in str(x.value)]
+    assert len(frames)==1
+    for label in ('重点监控','上涨榜','下跌榜','15分钟异动','特级警报','GMGN 警报','Web3 钱包信号'):
+        assert label in frames[0]
     for label in ('OI 异动榜','15分钟急涨急跌','data-market-volume'):
         assert label not in text

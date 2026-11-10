@@ -41,9 +41,9 @@ def test_first_trigger_is_immutable_and_current_percent_keeps_moving_without_new
 
 def test_rearmed_and_opposite_events_have_only_one_symbol_card_with_first_anchor(isolated):
     reference=dict(price=120.,time=int((NOW-30)*1000),basis=s.POLICY+' · test')
-    assert store.set_spike_episode(SYMBOL,'急跌',True,int((NOW+1)*1000),-10.,reference,108.)
+    assert not store.set_spike_episode(SYMBOL,'急跌',True,int((NOW+1)*1000),-10.,reference,108.)
     snapshot=s.snapshot(NOW+1)
-    assert len(store.spike_alerts())==2
+    assert len(store.spike_alerts())==1
     assert len(snapshot['records'])==len(snapshot['tracked'])==1
     assert snapshot['tracked'][0]['base_price']==100.  # Never change to a later alarm's base.
     markup=top20_spike_card(NOW+1)
@@ -78,3 +78,25 @@ def test_export_includes_live_tracking_and_first_trigger_separately(isolated):
     assert packet['display_dedup']=='symbol'
     assert packet['tracked'][0]['tracking_change']==pytest.approx(7.)
     assert packet['records'][0]['change']==6.
+
+
+def test_exact_four_hour_expiry_then_same_symbol_can_alert_again(isolated):
+    assert s.snapshot(NOW+s.LIFETIME-1)['tracked'][0]['expires_at']==NOW+s.LIFETIME
+    assert s.snapshot(NOW+s.LIFETIME)['tracked']==[]
+    ref=dict(price=200.,time=int((NOW+s.LIFETIME-60)*1000),basis=s.POLICY+' · renewed')
+    assert store.set_spike_episode(SYMBOL,'急涨',True,int((NOW+s.LIFETIME)*1000),7.,ref,214.)
+    quote(214.,NOW+s.LIFETIME)
+    row=s.snapshot(NOW+s.LIFETIME)['tracked'][0]
+    assert row['triggered']==NOW+s.LIFETIME and row['base_price']==200.
+    assert row['expires_at']==NOW+2*s.LIFETIME
+    assert len(store.spike_alerts())==2
+
+
+def test_old_duplicates_never_extend_the_first_four_hour_window(isolated):
+    with store.connect() as con:
+        for offset in (60,3*3600):
+            con.execute('INSERT INTO spike_alerts(time,symbol,direction,change,base_price,price,base_time,event_time,basis) VALUES (?,?,?,?,?,?,?,?,?)',
+                        (NOW+offset,SYMBOL,'急涨',8.,100.,108.,int(NOW*1000),int((NOW+offset)*1000),s.POLICY))
+    assert s.snapshot(NOW+3*3600)['tracked'][0]['triggered']==NOW
+    assert not s.snapshot(NOW+s.LIFETIME)['tracked']
+    assert not s.snapshot(NOW+s.LIFETIME+3600)['tracked']
