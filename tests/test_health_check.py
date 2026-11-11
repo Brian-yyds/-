@@ -61,6 +61,36 @@ def test_missing_heartbeat_bad_local_page_and_startup_grace():
     assert inspect(values,runtime)['signals']['repairable']
 
 
+def test_fresh_heartbeat_never_masks_database_or_source_error():
+    values,runtime=healthy()
+    values['monitor_health']['errors']=['database disk image is malformed']
+    report=inspect(values,runtime)['collector']
+    assert report['code']=='database_error_requires_repair' and not report['repairable']
+    values['monitor_health']['errors']=[]
+    values['market_health']['errors']={'ALLOUSDT':'database disk image is malformed'}
+    assert inspect(values,runtime)['collector']['code']=='database_error_requires_repair'
+    values['market_health']['errors']={'ALLOUSDT':'public API timeout'}
+    assert inspect(values,runtime)['collector']['code']=='source_retrying'
+
+
+def test_integrity_uses_full_index_check_and_always_closes(monkeypatch):
+    calls=[]
+    con=SimpleNamespace(execute=lambda sql:calls.append(sql) or SimpleNamespace(fetchall=lambda:[('ok',)]),
+                        close=lambda:calls.append('closed'))
+    monkeypatch.setattr(h.sqlite3,'connect',lambda *a,**k:con)
+    assert h.integrity()
+    assert calls==['PRAGMA integrity_check(1)','closed']
+
+
+def test_upstream_incomplete_pages_are_not_reported_as_complete():
+    values,runtime=healthy()
+    values['web3_signal_health']['chains']['sol'].update(capped=True,coverage_status='pagination_no_progress')
+    report=inspect(values,runtime)['signals']
+    assert report['code']=='source_coverage_limited:sol' and not report['repairable']
+    values['signal_dashboard']['generated_at']=NOW-301
+    assert inspect(values,runtime)['signals']['code']=='special_snapshot_stalled'
+
+
 def test_process_identity_checks_creation_time_and_exact_script(monkeypatch):
     proc=SimpleNamespace(create_time=lambda:123.,cmdline=lambda:['python',str(store.ROOT/'gmgn_monitor.py')])
     monkeypatch.setattr(h.psutil,'Process',lambda _:proc)

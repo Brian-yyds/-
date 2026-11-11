@@ -511,6 +511,10 @@ def board(scope,search,oi_direction,asset_scope='全部'):
     scanner_alive=0<=time.time()-scanner.get('heartbeat',0)<45
     state='● 监控中' if alive and connected and scanner_alive else '● 轮询监控' if alive and scanner_alive else '● 正在连接 / 请检查服务'
     css='live' if alive and scanner_alive else 'offline'
+    errors=health.get('errors') or scanner.get('errors')
+    if errors:
+        state='● 采集异常 · 请检查状态'
+        css='offline'
     stock_symbols={r['symbol'] for r in rows if r['asset_type']=='stock'}
     commodity_symbols={r['symbol'] for r in rows if r['asset_type']=='commodity'}
     stock_count=len(stock_symbols)

@@ -110,7 +110,7 @@ def test_stock_block_stops_new_alarms_hides_history_and_preserves_saved_focus(st
 
 def test_stock_block_does_not_silence_crypto_alarms(stock_monitor):
     monitor,now=stock_monitor
-    store.put('settings',{'include_stocks':False})
+    store.put('settings',{'include_stocks':False,'spike_top20_only':False})
     monitor.spike_config_time=0
     monitor.spike_prices['ALTUSDT'].append((now-60000,100))
     monitor.inspect_spike('ALTUSDT',110,now)

@@ -4,6 +4,7 @@ import json
 import math
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 import psutil
 import store
@@ -21,8 +22,23 @@ def numeric(value):
 
 def snapshot():
     # Read-only: a missing/corrupt DB is reported, never recreated or deleted.
-    with sqlite3.connect(store.DB.resolve().as_uri()+'?mode=ro',uri=True,timeout=3) as con:
+    with closing(sqlite3.connect(store.DB.resolve().as_uri()+'?mode=ro',uri=True,timeout=3)) as con:
         return {key:json.loads(value) for key,value in con.execute('SELECT key,value FROM kv')}
+
+
+def database_error(value):
+    text=json.dumps(value,ensure_ascii=True).lower()
+    return any(part in text for part in ('database disk image is malformed','not a database',
+        'disk i/o error','database or disk is full','database corruption'))
+
+
+def integrity():
+    # quick_check does not validate secondary-index contents; it passed while
+    # live pruning and a full integrity check were reporting SQLITE_CORRUPT.
+    try:
+        with closing(sqlite3.connect(store.DB.resolve().as_uri()+'?mode=ro',uri=True,timeout=3)) as con:
+            return con.execute('PRAGMA integrity_check(1)').fetchall()==[('ok',)]
+    except (sqlite3.Error,OSError):return False
 
 
 def owned(pid,created,script):
@@ -58,6 +74,8 @@ def check(values,runtime,now,alive,web_ok=True):
         if name=='workbench':
             add(name,'ok' if web_ok else 'local_page_unresponsive',not web_ok);continue
         key,limit=HEARTBEATS[name];health=values.get(key,{})
+        if database_error(health.get('errors',health.get('error',''))):
+            add(name,'database_error_requires_repair');continue
         if name=='gmgn':
             limit=max(limit,2*numeric(values.get('gmgn_config',{}).get('poll_seconds',60))+180)
             if numeric(values.get('gmgn_rate_limit_until'))>now or numeric(health.get('retry_at'))>now:
@@ -71,7 +89,18 @@ def check(values,runtime,now,alive,web_ok=True):
             market=numeric(values.get('market_health',{}).get('heartbeat'))
             if age>900 and (not market or now-market>900):
                 add(name,'market_scanner_stalled',True);continue
+            errors=values.get('market_health',{}).get('errors',{})
+            if database_error(errors):
+                add(name,'database_error_requires_repair');continue
+            if health.get('errors') or errors:
+                add(name,'source_retrying');continue
+            if values.get('stream_health',{}).get('connected') is False:
+                add(name,'stream_reconnecting');continue
+            if values.get('return_history_health',{}).get('status'):
+                add(name,'historical_baselines_pending');continue
         if name in ('gmgn','signals'):
+            if name=='signals' and now-numeric(values.get('signal_dashboard',{}).get('generated_at'))>300:
+                add(name,'special_snapshot_stalled',True);continue
             chains=health.get('chains',{})
             expected=('sol','bsc','base','robinhood') if name=='gmgn' else ('sol','bsc')
             field='updated'
@@ -80,8 +109,9 @@ def check(values,runtime,now,alive,web_ok=True):
                 add(name,'source_delayed:'+','.join(stale));continue
             if any(state.get('error') for state in chains.values()):
                 add(name,'source_retrying');continue
-            if name=='signals' and now-numeric(values.get('signal_dashboard',{}).get('generated_at'))>300:
-                add(name,'special_snapshot_stalled',True);continue
+            limited=[c for c in expected if chains.get(c,{}).get('capped') or chains.get(c,{}).get('coverage_status') in ('pagination_no_progress','continuing')]
+            if limited:
+                add(name,'source_coverage_limited:'+','.join(limited));continue
         if name=='news' and (health.get('error') or health.get('coverage_limited')):
             add(name,'source_delayed');continue
         if name=='export' and not values.get('sync_config',{}).get('enabled',False):
@@ -105,6 +135,19 @@ def inspect(runtime=None,now=None):
     except requests.RequestException:pass
     findings=check(values,runtime,now,
         lambda name,meta:owned(meta.get('pid'),meta.get('created_at'),SERVICES[name]),web_ok)
+    findings.append(dict(service='database',code='ok' if integrity() else 'integrity_failed_no_automatic_reset',repairable=False))
+    copy_path=store.USER/'copy_feed.sqlite'
+    if copy_path.exists():
+        try:
+            import copy_feed
+            view=copy_feed.ui_snapshot(copy_feed.Monitor(copy_path).snapshot(),now)
+            code=('provider_backoff' if view['blocked_until']>now else 'source_retrying' if view['error'] or view['errors'] else
+                  'operation_cache_stale' if view['traders']>view['private'] and not view['fresh'] else
+                  'partial_operation_cache_stale' if view['fresh']<view['traders']-view['private'] else 'ok')
+            findings.append(dict(service='copy_feed',code=code,repairable=False,
+                monitored=view['traders']-view['private'],fresh=view['fresh'],private=view['private'],errors=view['errors']))
+        except (sqlite3.Error,OSError,ValueError,KeyError,TypeError):
+            findings.append(dict(service='copy_feed',code='cache_read_failed',repairable=False))
     return dict(checked_at=now,next_check_at=now+INTERVAL,findings=findings)
 
 

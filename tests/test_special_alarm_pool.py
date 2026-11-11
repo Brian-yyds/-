@@ -217,25 +217,25 @@ def test_current_pause_is_respected_even_when_source_config_was_captured_before_
     assert len(w.publish(NOW+1)['special_alerts'])==1
 
 
-def test_six_day_old_alarm_outside_visible_fifty_still_matches_with_explicit_origin(isolated):
+def test_six_day_old_alarm_outside_visible_hundred_still_matches_with_explicit_origin(isolated):
     import signal_ui
     g.record_scan('sol',[token()],g.configuration(),NOW)
     with store.connect() as con:
-        for i in range(60):
+        for i in range(120):
             other=token('base','0x'+f'{i+1:040x}',symbol=f'NEWER_{i}',launchpad='',launchpad_platform='',volume=1000001)
             con.execute('INSERT INTO gmgn_alerts(chain,address,rule,triggered,last_seen,data) VALUES (?,?,?,?,?,?)',
                         ('base',other['address'],'非发射台放量',NOW+1+i,NOW+1+i,json.dumps(other)))
     stamp=NOW+6*86400
     accept(w.normalize(raw(signalId=700,signalTriggerTime=stamp*1000),'sol',stamp),stamp)
     view=w.dashboard()
-    assert len(view['gmgn_alerts'])==50 and all(row['token']['address']!=ADDRESS for row in view['gmgn_alerts'])
+    assert len(view['gmgn_alerts'])==100 and all(row['token']['address']!=ADDRESS for row in view['gmgn_alerts'])
     assert len(view['special_alerts'])==1
     event=view['special_alerts'][0]
     assert event['gmgn_alert_id']==1 and event['gmgn_triggered']==NOW and event['triggered']==stamp
     markup=signal_ui.special_card(view)
     assert '历史GMGN匹配' in markup and 'GMGN原报 '+signal_ui.clock(NOW) in markup
     assert '记录市值' in markup
-    with store.connect() as con:assert con.execute('SELECT COUNT(*) FROM gmgn_alerts').fetchone()[0]==61
+    with store.connect() as con:assert con.execute('SELECT COUNT(*) FROM gmgn_alerts').fetchone()[0]==121
 
 
 def test_repeat_qualifying_scan_preserves_alarm_snapshot_and_updates_only_live_caches(isolated):

@@ -137,3 +137,12 @@ def test_smart_mapping_requires_explicit_id_public_flags_and_readable_open(tmp_p
     snap['smart']['profiles'][tid]['public']=False
     view=f.ui_snapshot(snap,NOW+10)
     assert not view['smart']['trackable'] and view['items'][0]['smart_id'] is None
+
+
+def test_overdue_operations_take_priority_over_profile_refresh(tmp_path,monkeypatch):
+    m=f.Monitor(tmp_path/'feed.sqlite')
+    for state in m.state['rankings'].values():state['retry_at']=NOW+900
+    m.state['histories'][source.PORTFOLIO]=dict(rows=[],updated=NOW-241,retry_at=NOW-1,attempted=NOW-241)
+    monkeypatch.setattr(m,'_smart_step',lambda *a:pytest.fail('profile refresh delayed overdue operations'))
+    assert m.step(rank_session(),NOW)=='history:'+source.PORTFOLIO
+    assert m.snapshot()['histories'][source.PORTFOLIO]['updated']==NOW

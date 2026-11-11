@@ -1,6 +1,7 @@
 """Bounded all-market bootstrap/OI sampling, independent of the focus-pool loop."""
 import threading
 import time
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import store
 import monitoring
@@ -105,16 +106,24 @@ class MarketScanner:
         with ThreadPoolExecutor(max_workers=4) as pool:
             while True:
                 started=time.time()
-                cfg=store.settings()
-                symbols=monitoring.market_symbols(cfg)
-                last_report=0
-                futures=[pool.submit(self.sample,s) for s in symbols if s not in cfg['watchlist']]
-                for future in as_completed(futures):
-                    future.result()
-                    if time.time()-last_report>=1:
-                        self.report(symbols,started)
-                        last_report=time.time()
-                self.report(symbols,started)
+                futures=[]
+                try:
+                    cfg=store.settings()
+                    symbols=monitoring.market_symbols(cfg)
+                    last_report=0
+                    futures=[pool.submit(self.sample,s) for s in symbols if s not in cfg['watchlist']]
+                    for future in as_completed(futures):
+                        future.result()
+                        if time.time()-last_report>=1:
+                            self.report(symbols,started)
+                            last_report=time.time()
+                    self.report(symbols,started)
+                except Exception as exc:
+                    for future in futures:future.cancel()
+                    # A transient database/reporting error must not permanently
+                    # kill this nested thread while the main worker stays alive.
+                    print(json.dumps(dict(event='market_scanner_retry',error_type=type(exc).__name__,
+                        sqlite_code=getattr(exc,'sqlite_errorname',None),time=time.time())),flush=True)
                 time.sleep(max(3,min(900,self.monitor.blocked_until-time.time())))
 
     def report(self,symbols,started):

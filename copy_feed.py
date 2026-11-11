@@ -17,7 +17,7 @@ RANK_INTERVAL = 900
 ORDER_INTERVAL = 120
 REQUEST_GAP = 1.0
 THREAD_NAME = 'workbench-public-copy-feed'
-COLLECTOR_VERSION = 3
+COLLECTOR_VERSION = 4
 CACHE = Path(__file__).resolve().parent / 'user_data' / 'copy_feed.sqlite'
 _START_LOCK = threading.Lock()
 
@@ -182,12 +182,19 @@ class Monitor:
             return 'rank:'+kind
         # Share one serial request budget; reserve alternating turns for directory
         # checks so profile discovery cannot starve public order polling.
-        if not getattr(self,'_smart_last',False):
+        members=self.members(snap)
+        # Directory/profile refresh must not push already monitored operations
+        # beyond the UI's five-minute freshness window after a restart.
+        operations_due=any(member['portfolio_type']!='PRIVATE'
+            and snap['histories'].get(pid,{}).get('updated')
+            and now-snap['histories'][pid]['updated']>=240
+            and now>=snap['histories'][pid].get('retry_at',0)
+            for pid,member in members.items())
+        if not getattr(self,'_smart_last',False) and not operations_due:
             self._smart_last=True
             result=self._smart_step(session,now,snap)
             if result:return result
         self._smart_last=False
-        members=self.members(snap)
         eligible=[]
         for pid,member in members.items():
             if member['portfolio_type']=='PRIVATE':continue

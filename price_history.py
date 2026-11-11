@@ -71,6 +71,7 @@ class Monitor:
                         schema(con)
                         con.execute('DELETE FROM return_baselines WHERE t<?',(int(started*1000)-WINDOW-5*MINUTE,))
                     store.put('return_history_health',dict(heartbeat=time.time(),symbols=len(ordered),window_hours=72))
-                except Exception:
-                    store.put('return_history_health',dict(heartbeat=time.time(),status='历史基准补齐中',window_hours=72))
+                except Exception as exc:
+                    store.put('return_history_health',dict(heartbeat=time.time(),status='历史基准采集异常',
+                        error_type=type(exc).__name__,error=str(exc)[:240],window_hours=72))
                 time.sleep(30)

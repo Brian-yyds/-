@@ -41,8 +41,33 @@ DEFAULTS = {
 @contextmanager
 def connect():
     USER.mkdir(exist_ok=True)
-    con = sqlite3.connect(DB, timeout=15)
-    con.execute("PRAGMA journal_mode=WAL")
+    con=None
+    try:
+        for attempt in range(3):
+            try:
+                con=sqlite3.connect(DB,timeout=15)
+                con.execute('PRAGMA journal_mode=WAL')
+                break
+            except sqlite3.OperationalError as exc:
+                if con is not None:con.close();con=None
+                # Retry only connection initialization, before any application
+                # writes. Never replay a transaction or hide corruption.
+                if attempt==2 or not any(part in str(exc).lower() for part in ('disk i/o error','unable to open database file')):raise
+                time.sleep(.05*(attempt+1))
+    except BaseException:
+        if con is not None:con.close()
+        raise
+    try:
+        yield from _connected(con)
+    finally:
+        con.close()
+
+
+def _connected(con):
+    # Windows temp-directory access can fail while sorting all-market history.
+    # Keep remaining small temporary operations in memory; large history reads
+    # below follow the existing (symbol,t) index rather than a global time sort.
+    con.execute("PRAGMA temp_store=MEMORY")
     con.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     con.execute("CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, time REAL, symbol TEXT, kind TEXT, value REAL, message TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS alert_state (symbol TEXT, kind TEXT, active INTEGER, last_sent REAL, PRIMARY KEY(symbol,kind))")
@@ -56,11 +81,8 @@ def connect():
     con.execute("CREATE TABLE IF NOT EXISTS radar_events (id INTEGER PRIMARY KEY,time REAL,symbol TEXT,kind TEXT,data TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS radar_state (symbol TEXT,kind TEXT,since REAL,last_seen REAL,last_true REAL,active INTEGER,last_sent REAL,PRIMARY KEY(symbol,kind))")
     con.execute("CREATE TABLE IF NOT EXISTS ai_jobs (id INTEGER PRIMARY KEY,created REAL,updated REAL,profile TEXT,source TEXT,status TEXT,snapshot TEXT,result TEXT,error TEXT,usage TEXT)")
-    try:
-        with con:
-            yield con
-    finally:
-        con.close()
+    with con:
+        yield con
 
 
 def get(key, default=None):
@@ -134,16 +156,16 @@ def live_inputs(symbols, now=None, *, oi_window_minutes=None, include_oi=True):
         oi=[]
         if include_oi:
             if oi_window_minutes is None:
-                oi = con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND t>=? ORDER BY t", [*symbols,cutoff]).fetchall()
+                oi = con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND t>=? ORDER BY symbol,t", [*symbols,cutoff]).fetchall()
             else:
                 # OI rankings need a fresh current sample and candidates around
                 # its 4h baseline, not every intermediate sample. Include the
                 # largest allowed current age (180s) + historical tolerance (330s).
                 current=int(now*1000)
                 target=current-oi_window_minutes*60000
-                oi=con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND (t BETWEEN ? AND ? OR t BETWEEN ? AND ?) ORDER BY t",
+                oi=con.execute(f"SELECT symbol,t,amount,source FROM oi_samples WHERE symbol IN ({marks}) AND (t BETWEEN ? AND ? OR t BETWEEN ? AND ?) ORDER BY symbol,t",
                                [*symbols,current-180000,current,target-510000,target]).fetchall()
-        bars = con.execute(f"SELECT symbol,t,o,h,l,c,q,closed,seen FROM minute_candles WHERE symbol IN ({marks}) AND t>=? ORDER BY t", [*symbols,cutoff]).fetchall()
+        bars = con.execute(f"SELECT symbol,t,o,h,l,c,q,closed,seen FROM minute_candles WHERE symbol IN ({marks}) AND t>=? ORDER BY symbol,t", [*symbols,cutoff]).fetchall()
     oi_map, bar_map = {}, {}
     for symbol,*values in oi:
         oi_map.setdefault(symbol, []).append(values)

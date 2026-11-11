@@ -137,7 +137,7 @@ def test_sampling_gap_does_not_count_as_continuous_confirmation(isolated):
 
 
 def test_emergency_threshold_hot_change_is_independent_and_auditable(isolated):
-    store.put('settings',store.DEFAULTS|dict(spike_up_pct=15.,spike_down_pct=5.))
+    store.put('settings',store.DEFAULTS|dict(spike_up_pct=15.,spike_down_pct=5.,spike_top20_only=False))
     m=Monitor()
     now=int(time.time()*1000)-5000
     m.spike_prices['X'].append((now-60000,100))
