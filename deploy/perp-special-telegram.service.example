@@ -1,0 +1,26 @@
+[Unit]
+Description=Special alert Telegram delivery
+After=network-online.target perp-workbench.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=perp-monitor
+Group=perp-monitor
+WorkingDirectory=/opt/perp-workbench/telegram
+EnvironmentFile=/etc/perp-workbench/telegram.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/perp-workbench/venv/bin/python -u /opt/perp-workbench/telegram/telegram_special.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/perp-workbench/shared/user_data
+ReadWritePaths=/opt/perp-workbench/shared/telegram
+
+[Install]
+WantedBy=multi-user.target

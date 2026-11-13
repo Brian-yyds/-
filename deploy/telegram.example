@@ -1,0 +1,4 @@
+# Copy to /etc/perp-workbench/telegram.env, root-owned mode 600.
+# Fill locally on the server; never commit populated credentials.
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+TELEGRAM_CHAT_ID=YOUR_VERIFIED_PRIVATE_CHAT_ID
